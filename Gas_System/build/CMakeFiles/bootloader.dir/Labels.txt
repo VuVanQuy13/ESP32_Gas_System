@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/CMakeFiles/bootloader
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/CMakeFiles/bootloader.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/CMakeFiles/bootloader-complete.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

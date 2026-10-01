@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "relay/relay.c"
+        "buttons/buttons.c"
+        "mq2/mq2.c"
+        "lcd1602/lcd1602.c"
+        "lcd1602/lcd1602_i2c.c"
+    INCLUDE_DIRS
+        "."
+        "relay"
+        "buttons"
+        "mq2"
+        "lcd1602"
+    REQUIRES
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_adc
+        esp_rom
+        freertos
+        log
+)

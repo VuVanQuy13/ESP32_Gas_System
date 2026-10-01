@@ -1,0 +1,112 @@
+menu "Gas_System"
+menu "Che do chay, MQ-2 va LCD"
+    config DK_THU_NGHIEM
+        bool "Chay du lieu gia, khong xuat GPIO"
+        default y
+        help
+            Gia lap ADC va relay, khong cau hinh GPIO. Co chu ky mau thap/cao/loi.
+            Tat de dung nut, relay, ADC va LCD I2C that. Web dung duoc o ca hai che do.
+            Ca hai che do deu dung NVS that.
+            Auto khong bat relay khi chua co du lieu cam bien/cau hinh da luu.
+    config MQ2_ON_DINH_GIAY
+        int "Thoi gian on dinh MQ-2 that (0 = chua xac dinh)"
+        range 0 604800
+        default 0
+        help
+            Can xac dinh bang tai lieu/thuc nghiem truoc khi dung ADC that.
+            Gia tri 0 giu cam bien chua Ready, Auto khong bat relay.
+            Tham so nay khong thay the qua trinh gia hoa/hieu chinh MQ-2.
+    config LCD_TU_TIM
+        bool "Tu tim mot thiet bi trong dai dia chi PCF8574/PCF8574A"
+        default n
+        help
+            Bao loi neu khong co hoac co nhieu dia chi phan hoi.
+            Chi do dia chi, khong tu xac dinh so do chan backpack.
+    config LCD_DIA_CHI
+        hex "Dia chi 7-bit PCF8574 (can xac nhan tren board)"
+        range 0x20 0x3f
+        default 0x27
+        help
+            Chi chap nhan 0x20..0x27 hoac 0x38..0x3f. Dung khi tat LCD_TU_TIM.
+    config LCD_DEN_MUC_CAO
+        bool "Backlight bat o muc HIGH"
+        default y
+endmenu
+
+menu "Chan GPIO - Gas System (ESP32 DevKit V1)"
+    help
+        So GPIO, khong phai vi tri header. Khong dung chan flash, UART0,
+        strapping. Build se bao loi neu trung chan hoac GPIO khong phu hop.
+    config GAS_GPIO_MQ2
+        int "GPIO MQ2"
+        range 32 39
+        default 34
+        help
+            ADC1: chi chon 32, 33, 34, 35, 36 hoac 39.
+    config GAS_GPIO_LCD_SDA
+        int "GPIO LCD_SDA"
+        range 0 39
+        default 21
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_LCD_SCL
+        int "GPIO LCD_SCL"
+        range 0 39
+        default 22
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_RELAY
+        int "GPIO RELAY"
+        range 0 39
+        default 23
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_NUT_BAT
+        int "GPIO NUT_BAT"
+        range 0 39
+        default 25
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_NUT_TAT
+        int "GPIO NUT_TAT"
+        range 0 39
+        default 26
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_NUT_CHE_DO
+        int "GPIO NUT_CHE_DO"
+        range 0 39
+        default 27
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_NUT_CHINH
+        int "GPIO NUT_CHINH"
+        range 0 39
+        default 32
+        help
+            Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+endmenu
+
+
+menu "Web LAN"
+    config GAS_WEB
+        bool "Bien dich WebSocket LAN"
+        default y
+        select HTTPD_WS_SUPPORT
+        select HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT
+endmenu
+
+menu "Wi-Fi"
+    config GAS_WIFI_SSID
+        string "Ten mang Wi-Fi (SSID)"
+        default ""
+        help
+            De trong de khong ket noi. wifi_local.h neu co se duoc uu tien.
+    config GAS_WIFI_PASSWORD
+        string "Mat khau Wi-Fi"
+        default ""
+        help
+            Mang WPA/WPA2 ca nhan: 8..63 byte. Khong commit sdkconfig chua mat khau.
+            wifi_local.h neu co se duoc uu tien.
+endmenu
+endmenu

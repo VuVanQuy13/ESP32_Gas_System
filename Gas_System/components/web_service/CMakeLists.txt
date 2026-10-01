@@ -1,0 +1,16 @@
+idf_component_register(
+    SRCS
+        "web_gateway.c"
+        "web_task/web_task.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        app_tasks
+        esp_http_server
+        json
+        esp_timer
+    EMBED_FILES
+        "web/index.html"
+        "web/app.js"
+        "web/style.css"
+)

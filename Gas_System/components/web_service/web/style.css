@@ -1,0 +1,206 @@
+:root {
+    font-family:system-ui,sans-serif;
+    color:#193036;
+    background:#eef4f3;
+    line-height:1.5
+}
+
+* {
+    box-sizing:border-box
+}
+
+body {
+    margin:0
+}
+
+main {
+    max-width:900px;
+    margin:auto;
+    padding:36px 22px
+}
+
+header {
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:20px;
+    margin-bottom:28px
+}
+
+h1 {
+    font-size:clamp(25px,5vw,36px);
+    margin:0
+}
+
+h2 {
+    margin-top:0;
+    font-size:22px
+}
+
+.nhan {
+    letter-spacing:2px;
+    font-size:11px;
+    font-weight:700;
+    color:#49716d
+}
+
+.huy-hieu {
+    background:#dce9e6;
+    border-radius:24px;
+    padding:8px 14px;
+    font-size:13px;
+    white-space:nowrap
+}
+
+.so-do,.dieu-khien,.chi-so article {
+    border:1px solid #d9e5e2;
+    border-radius:18px;
+    background:#fff;
+    padding:24px
+}
+
+.so-do {
+    background:#123e3a;
+    color:#fff
+}
+
+.so-do>p:first-child {
+    margin-top:0;
+    color:#b8d6cc
+}
+
+.so-do strong {
+    font-size:76px;
+    font-weight:650;
+    letter-spacing:-3px
+}
+
+.so-do span {
+    color:#b8d6cc
+}
+
+.chu-thich {
+    font-size:12px;
+    opacity:.75
+}
+
+.chi-so {
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:14px;
+    margin:16px 0
+}
+
+.chi-so p {
+    margin:0 0 8px;
+    color:#5e7474;
+    font-size:13px
+}
+
+.chi-so strong {
+    font-size:23px
+}
+
+.nut {
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:10px;
+    margin:20px 0
+}
+
+button {
+    padding:14px 8px;
+    border:1px solid #0d7465;
+    background:#0d7465;
+    color:white;
+    font:inherit;
+    font-weight:600;
+    border-radius:10px;
+    cursor:pointer
+}
+
+button:hover:enabled {
+    background:#08594d
+}
+
+button:disabled {
+    background:#eef2f1;
+    color:#82948f;
+    border-color:#dce5e2;
+    cursor:not-allowed
+}
+
+button:focus-visible,input:focus-visible {
+    outline:3px solid #eeab3a;
+    outline-offset:3px
+}
+
+#vung-chinh {
+    background:#f0f6f4;
+    padding:20px;
+    border-radius:12px
+}
+
+input[type=range] {
+    display:block;
+    width:100%;
+    margin:20px 0;
+    accent-color:#0d7465
+}
+
+#vung-chinh p,#huong-dan {
+    font-size:14px;
+    color:#526967
+}
+
+#thong-bao {
+    color:#486564;
+    min-height:24px
+}
+
+.canh-bao {
+    color:#b62f30!important
+}
+
+.so-do.bao-dong {
+    background:#712e2b
+}
+
+footer {
+    font-size:12px;
+    color:#647a75;
+    margin:24px 0
+}
+
+@media(max-width:600px) {
+    main {
+        padding:22px 14px
+    }
+
+    header {
+        align-items:flex-start;
+        flex-direction:column;
+        gap:10px
+    }
+
+    .chi-so {
+        gap:8px
+    }
+
+    .chi-so article {
+        padding:14px 10px
+    }
+
+    .chi-so strong {
+        font-size:18px
+    }
+
+    .nut {
+        grid-template-columns:repeat(2,1fr)
+    }
+
+    .so-do strong {
+        font-size:64px
+    }
+
+}

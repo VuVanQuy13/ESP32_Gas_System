@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "control_task/control_task.c"
+        "button_task/button_task.c"
+        "storage_task/storage_task.c"
+        "sensor_task/sensor_task.c"
+        "display_task/display_task.c"
+    INCLUDE_DIRS
+        "control_task"
+        "button_task"
+        "storage_task"
+        "sensor_task"
+        "display_task"
+    REQUIRES
+        control_core
+        drivers
+        storage
+        esp_timer
+        freertos
+        log
+)

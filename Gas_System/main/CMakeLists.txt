@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "Gas_System.c"
+    INCLUDE_DIRS
+        "."
+    REQUIRES
+        app_tasks
+        web_service
+        network
+        esp_hw_support
+)

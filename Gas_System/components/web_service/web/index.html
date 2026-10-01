@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>Giám sát MQ-2</title>
+        <link rel="stylesheet" href="/style.css">
+        <script defer src="/app.js">
+        </script>
+    </head>
+    <body>
+        <main>
+            <header>
+                <div>
+                    <p class="nhan">ESP32 · MẠNG NỘI BỘ</p>
+                    <h1>Giám sát khí gas</h1>
+                </div><span id="ket-noi" class="huy-hieu">Đang kết nối</span>
+            </header>
+            <section class="so-do" aria-label="Số đo cảm biến">
+                <p>Giá trị MQ-2 đã lọc</p>
+                <div><strong id="gia-tri">—</strong><span> ADC thô</span>
+                </div>
+                <p id="cam-bien" aria-live="polite">Đang chờ dữ liệu</p>
+                <p class="chu-thich">Giá trị chưa được hiệu chỉnh thành ppm.</p>
+            </section>
+            <section class="chi-so">
+                <article>
+                    <p>Chế độ</p><strong id="che-do">—</strong>
+                </article>
+                <article>
+                    <p>Relay yêu cầu</p><strong id="relay">—</strong>
+                </article>
+                <article>
+                    <p>Ngưỡng hiệu lực</p><strong id="nguong">—</strong>
+                </article>
+            </section>
+            <section class="dieu-khien">
+                <h2>Điều khiển</h2>
+                <p id="huong-dan">Đợi trạng thái từ ESP32 để thao tác.</p>
+                <div class="nut">
+                    <button id="tang" disabled>Bật / +</button>
+                    <button id="giam" disabled>Tắt / −</button>
+                    <button id="doi-che-do" disabled>Auto / Manual</button>
+                    <button id="chinh" disabled>Chỉnh ngưỡng</button>
+                </div>
+                <div id="vung-chinh" hidden><label for="thanh-truot">Bản nháp trên ESP32: <strong id="ban-nhap">—</strong></label>
+                    <input id="thanh-truot" type="range" min="100" max="4000" step="1" disabled>
+                    <p id="dang-keo">
+                    </p>
+                    <p>Nút cứng và web cùng sửa bản nháp này. Nhấn Lưu ngưỡng để ghi NVS.</p>
+                </div>
+                <p id="luu" role="status">
+                </p>
+                <p id="thong-bao" role="status">Không tự gửi lại lệnh sau khi mất kết nối.</p>
+            </section>
+            <footer>Thay đổi từ nút cứng được đồng bộ lên trang. Relay hiển thị trạng thái yêu cầu, chưa có phản hồi tiếp điểm.</footer>
+        </main>
+    </body>
+</html>

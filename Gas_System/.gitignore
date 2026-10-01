@@ -1,0 +1,10 @@
+/build_control_task/
+/build_gpio/
+/build_ready/
+/build_ready_test/
+/config/board.local.json
+/tools/__pycache__/
+/config/sdkconfig.board
+/config/sdkconfig.board.old
+/build/
+/.cache/
