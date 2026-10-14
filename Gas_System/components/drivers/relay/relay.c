@@ -1,33 +1,33 @@
 #include "relay.h"
 #include "board_pins.h"
 #include "driver/gpio.h"
-static bool da_khoi_tao;
+static bool initialized;
 
-esp_err_t relay_khoi_tao(void)
+esp_err_t relay_initialize(void)
 {
-    if (da_khoi_tao)
+    if (initialized)
         return ESP_ERR_INVALID_STATE;
 
     /* Nạp LOW vào latch trước khi bật chế độ output. */
-    esp_err_t loi = gpio_set_level(CONFIG_GAS_GPIO_RELAY, 0);
-    if (loi != ESP_OK)
-        return loi;
-    const gpio_config_t c = {
+    esp_err_t error = gpio_set_level(CONFIG_GAS_GPIO_RELAY, 0);
+    if (error != ESP_OK)
+        return error;
+    const gpio_config_t config = {
         .pin_bit_mask = 1ULL << CONFIG_GAS_GPIO_RELAY,
         .mode = GPIO_MODE_OUTPUT,
         .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
-    loi = gpio_config(&c);
-    if (loi == ESP_OK)
-        da_khoi_tao = true;
-    return loi;
+    error = gpio_config(&config);
+    if (error == ESP_OK)
+        initialized = true;
+    return error;
 }
 
-esp_err_t relay_dat(bool bat)
+esp_err_t relay_set(bool on)
 {
-    if (!da_khoi_tao)
+    if (!initialized)
         return ESP_ERR_INVALID_STATE;
-    return gpio_set_level(CONFIG_GAS_GPIO_RELAY, bat ? 1 : 0);
+    return gpio_set_level(CONFIG_GAS_GPIO_RELAY, on ? 1 : 0);
 }

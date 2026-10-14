@@ -1,5 +1,67 @@
 # Project context
 
+## README overview update (2026-10-14)
+
+- Reworked root README with current project features, listed hardware/software, MCU peripherals and ESP-IDF services, default GPIOs, setup commands, and ADC/ppm and hardware-validation limitations.
+- Verified README claims against current `Gas_System` source, `sdkconfig`, Kconfig and wiring documentation. Removed a stale host-test command because `Gas_System/tests` and `Gas_System/tools` are absent from the current source tree; linked the test matrix as documentation and stated that automated tests are not currently present.
+- Did not change firmware or run build/tests; verified local README links and Markdown diff only.
+
+## Beginner syntax walkthrough for current control startup (2026-10-13)
+
+- Explained current implementation at control_task.c:307 with current header alias from control_task.h:8: forward declaration `typedef struct control_service control_service_t`, full private struct definition in C file, `control_service_t **out`, and `const control_task_config *config`.
+- Covered include/header guards, function prototype vs definition, pointer/member operators (`*`, `&`, `->`), callback function pointer, boolean/null/error expressions, `sizeof(*service)`/calloc, assignment/copy of config, RTOS object creation and rollback, relay OFF initialization, snapshot, task launch and publishing output handle only on success. Call site: main/Gas_System.c:96-97.
+- Clarified invalid argument returns before `*out = NULL`; later failures leave out NULL and cleanup allocated RTOS resources. Config is copied shallowly, so callback context lifetime matters. No code or build changes; docs/context updated only.
+
+## Current control startup source names and argument order correction (2026-10-13)
+
+- Re-read current `control_task_start` after naming cleanup: current public alias is `control_service_t`, signature is `control_task_start(control_service_t **out, const control_task_config *config)`, called with `control_service_t *service = NULL; control_task_start(&service, &setup)`.
+- Precise detail: argument validation happens before `*out = NULL`; therefore on invalid `config` or missing `set_relay`, the caller's output variable is left as-is. For valid arguments, the function clears output, allocates/initializes service, creates RTOS objects, calls relay OFF, publishes initial snapshots, creates owner task, then writes `*out` only on success. This corrects the prior shorthand that implied `*out` is always nulled before all validation.
+
+## Opaque handle alias naming (2026-10-13)
+
+- Changed the forward-declared opaque service/task handle aliases to end in `_t`: `control_service_t`, `sensor_task_t`, `display_task_t`, and `storage_task_t`. The `struct` tags and runtime behavior are unchanged; declarations, function prototypes, and all firmware call sites use the new aliases consistently.
+- Purpose: visually distinguish the C `struct` tag (for example, `struct control_service`) from the typedef alias (`control_service_t`) for beginner readability. No wire protocol or persisted data format changes.
+
+## `control_task_start` beginner explanation refresh (2026-10-13)
+
+- Re-read the current English-named implementation after source rename. `control_task_start(control_service_t **out, const control_task_config *config)` uses `out` as output-handle location while returning `esp_err_t` separately. Caller declares `control_service_t *service = NULL`, passes `&service`; implementation sets `*out = NULL` first and publishes allocated opaque service only after core/queues/semaphore, relay OFF, snapshot and FreeRTOS task initialization succeed.
+- Failure paths: invalid arguments -> `ESP_ERR_INVALID_ARG`; calloc or RTOS allocations/task failure -> `ESP_ERR_NO_MEM`; core validation -> `ESP_ERR_INVALID_ARG`; relay callback error propagates. Partial RTOS objects and service allocation are released by `cleanup_init_error`. Successful service is long-lived; no delete API. Config is shallow copied, so callback context must outlive it/service.
+- Explanation covers pointer levels and memory diagram, why status+output handle are combined, API opacity, embedded heap fragmentation/exhaustion and lifetime tradeoffs. No code changes/build/tests.
+
+## `control_task_start` and double-pointer explanation (2026-10-11)
+
+- Read current `control_task.c/.h`, call site in `main/Gas_System.c`, and current codebase map. Explained `control_service_t **out` as the address of the caller's handle variable, allowing the function to assign the newly allocated opaque service while returning a separate `esp_err_t` status.
+- Traced initialization order: validate args -> set caller output NULL -> calloc service -> copy config -> initialize core -> create queues/semaphore -> command relay OFF -> publish initial snapshots -> create FreeRTOS task -> assign `*out` only on success. Each failure path returns an ESP error and frees any created RTOS objects/service.
+- Explained benefits/tradeoffs in embedded C: output handle + status return, opaque API, failure leaves predictable NULL; costs indirection and caller must pass address of a pointer, plus calloc heap fragmentation/exhaustion/lifetime. Callback context is shallow-copied and must outlive service. No source changes or build/tests.
+
+## Web host and Vietnamese source comments audit (2026-10-07)
+
+- `components/network/network.c` already logs `url=http://<ESP32-IP>` on `IP_EVENT_STA_GOT_IP`; `components/web_service/web_task/web_task.c` logs the HTTP server port and `/ws` when it starts. There is no fixed host because the router assigns the IP. Current checked-in `sdkconfig` has empty Wi-Fi SSID/password, and `components/network/include/wifi_local.h` is absent, so configure Wi-Fi in menuconfig or create the ignored local header before expecting an IP/web access.
+- Scanned all 33 firmware C/header files as UTF-8. Restored 27 Vietnamese comments that were actually mojibake (including the earlier LCD comments); changed one mixed-language MQ-2 comment to Vietnamese. Confirmed no suspicious mojibake markers or invalid UTF-8 remain in firmware comments. No runtime code changed; no build/flash was needed or performed.
+
+## Intern source-reading guide requested (2026-10-07)
+
+- User asked for a concise, beginner-friendly explanation of how to read the complete embedded source, where to start, and detailed explanations only for difficult syntax/logic. This turn reviewed the current application-owned source under `Gas_System`: `main/Gas_System.c`, component C/headers, web HTML/CSS/JS, project/component CMake, Kconfig and saved sdkconfig. Generated `build/`, `.cache/` and test output were excluded. No firmware behavior was changed.
+- Current recommended order: `main/Gas_System.c` startup/composition root -> `components/control_core/include/control_core.h` data model and `control_core.c` pure policy -> `components/app_tasks/control_task/control_task.c/.h` state ownership/queues/side effects -> sensor, button, storage and display tasks -> hardware drivers and NVS -> network -> web gateway/task/browser assets -> board pin/Kconfig/CMake configuration.
+- Current runtime is hardware-only. Old sections in historical guides/context may refer to `dk_*`, `control_task_noi_bo.h`, fake/demo runtime, old test runners or earlier missing modules; current firmware identifiers are English (`control_*`, `sensor_*`, etc.), fake runtime was removed, and control/storage private headers were consolidated. Check the source before relying on older prose.
+- Core concepts to teach: FreeRTOS tasks and bounded queues; single-owner mutable state; event/result structs and callback/context lifetime; uint64 boot/sequence/revision IDs; sample validity, moving mean and warmup; Auto hysteresis (`threshold` ON, `threshold - 50` OFF); asynchronous NVS save transaction and retained result; snapshot mailboxes; WebSocket input validation and stale-command checks; LCD nibble/PCF8574 output.
+- Evidence/limits: source inventory counted 48 non-generated project files; application walkthrough was read-only. No build, tests, flash or physical validation was requested or performed. `docs/codebase-map.md` already contains the current runtime/module map but also historical records; treat its current-runtime sections as orientation and verify details against source.
+
+## English embedded identifiers and Vietnamese comments (2026-10-01)
+
+- User requested English names for firmware code while retaining Vietnamese explanations. Renamed C types, functions, constants, fields and local variables under `Gas_System/main` and `Gas_System/components`; browser HTML/CSS/JavaScript and the wire JSON field names remain unchanged. Added concise Vietnamese comments at the `app_main`, control-core configuration/state/event API, GPIO policy and control-task configuration boundaries.
+- Verification: ESP-IDF v5.5.4 `idf.py build` passed; output `Gas_System.bin` is 0x612e0 bytes with 62% app partition free. No device was flashed or electrically tested.
+
+## Full source walkthrough requested (2026-10-01)
+
+- User is learning as a beginner and requested a current-source, hardware-only walkthrough. Re-read all application source under `Gas_System/main` and `Gas_System/components`, including web assets and build/config files. The explanation should follow the real runtime: `app_main` -> driver initialization/NVS -> control owner -> producer/consumer tasks -> Wi-Fi/HTTP/WebSocket -> browser; historical demo notes below are not current behavior.
+
+## Removed fake runtime (2026-10-01)
+
+- User authorized deleting fake/demo runtime data. Removed the `DK_THU_NGHIEM` menu option and saved configuration, plus fake LCD, ADC and relay callbacks from `Gas_System/main/Gas_System.c`. Firmware now always initializes and uses the real MQ-2, relay, buttons and LCD drivers.
+- `idf.py build` with ESP-IDF v5.5.4 passed; `Gas_System.bin` was generated. No firmware was flashed and no physical-board test was performed.
+- Saved `MQ2_ON_DINH_GIAY` remains `0`; before an Auto-mode hardware test, set the measured MQ-2 warm-up time in `menuconfig`, otherwise the sensor intentionally never reaches Ready state.
+
 ## Main-source teaching walkthrough (2026-09-29)
 
 - Explained `main/Gas_System.c` from includes through `app_main()`: compile-time demo/hardware callbacks, control-policy setup, boot/session ID, hardware initialization, NVS restore, service/task creation order, callback/context lifetime, LCD configuration and asynchronous network/web start. Focused on why each function receives pointers, config structs and callbacks. No source changes or validation run.

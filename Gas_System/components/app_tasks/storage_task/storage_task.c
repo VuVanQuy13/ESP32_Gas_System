@@ -1,75 +1,75 @@
-#include "storage_task.h"
+﻿#include "storage_task.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <inttypes.h>
 #include <stdlib.h>
 
-struct luu_tac_vu {
-    dk_dich_vu *dich_vu;
-    luu_kho kho;
-    bool co_ket_qua;
-    dk_su_kien ket_qua;
+struct storage_task {
+    control_service_t *service;
+    storage_store store;
+    bool has_result;
+    control_event result_event;
     TaskHandle_t task;
 };
 
-static esp_err_t luu_chay_mot_luot(luu_tac_vu *t)
+static esp_err_t storage_run_once(storage_task_t *worker)
 {
-    if (!t)
+    if (!worker)
         return ESP_ERR_INVALID_ARG;
-    if (!t->co_ket_qua) {
-        dk_viec_luu viec;
-        esp_err_t loi = dk_nhan_viec_luu(t->dich_vu, &viec);
-        if (loi != ESP_OK)
-            return loi;
-        loi = luu_ghi(&t->kho, viec.nguong);
+    if (!worker->has_result) {
+        storage_job job;
+        esp_err_t error = control_take_storage_job(worker->service, &job);
+        if (error != ESP_OK)
+            return error;
+        error = storage_write(&worker->store, job.threshold);
         ESP_LOGI("luu_tru",
             "su_kien=ghi_xong boot=%" PRIu64 " lan=%" PRIu64 " nguong=%d loi=%d",
-            viec.ma_khoi_dong,
-            viec.ma_lan_luu,
-            viec.nguong,
-            loi);
-        t->ket_qua = (dk_su_kien){
-            .loai = loi == ESP_OK ? DK_LUU_THANH_CONG : DK_LUU_THAT_BAI,
-            .ma_khoi_dong = viec.ma_khoi_dong,
-            .ma_lan_luu = viec.ma_lan_luu
+            job.boot_id,
+            job.save_id,
+            job.threshold,
+            error);
+        worker->result_event = (control_event){
+            .type = error == ESP_OK ? CONTROL_EVENT_SAVE_OK : CONTROL_EVENT_SAVE_FAILED,
+            .boot_id = job.boot_id,
+            .save_id = job.save_id
         };
-        t->co_ket_qua = true;
+        worker->has_result = true;
     }
-    esp_err_t loi = dk_bao_ket_qua_luu(t->dich_vu, &t->ket_qua);
-    if (loi == ESP_OK)
-        t->co_ket_qua = false;
+    esp_err_t error = control_report_storage_result(worker->service, &worker->result_event);
+    if (error == ESP_OK)
+        worker->has_result = false;
 
     /* Queue đầy: giữ nguyên kết quả, lượt sau chỉ gửi lại, không ghi NVS lại. */
-    return loi;
+    return error;
 }
 
-static void vong_lap_luu(void *tham_so)
+static void storage_task_loop(void *parameters)
 {
     for (;;) {
-        esp_err_t loi = luu_chay_mot_luot(tham_so);
-        if (loi != ESP_OK && loi != ESP_ERR_NOT_FOUND && loi != ESP_ERR_TIMEOUT) {
-            ESP_LOGE("luu_tru", "su_kien=loi_dich_vu loi=%d", loi);
+        esp_err_t error = storage_run_once(parameters);
+        if (error != ESP_OK && error != ESP_ERR_NOT_FOUND && error != ESP_ERR_TIMEOUT) {
+            ESP_LOGE("luu_tru", "su_kien=loi_dich_vu loi=%d", error);
             abort();
         }
         vTaskDelay(pdMS_TO_TICKS(20) > 0 ? pdMS_TO_TICKS(20) : 1);
     }
 }
 
-esp_err_t luu_bat_dau(luu_tac_vu **ra, dk_dich_vu *d, const luu_kho *k)
+esp_err_t storage_task_start(storage_task_t **out, control_service_t *service, const storage_store *result)
 {
-    if (!ra || !d || !k || !k->da_thiet_lap)
+    if (!out || !service || !result || !result->configured)
         return ESP_ERR_INVALID_ARG;
-    *ra = NULL;
-    luu_tac_vu *t = calloc(1, sizeof(*t));
-    if (!t)
+    *out = NULL;
+    storage_task_t *worker = calloc(1, sizeof(*worker));
+    if (!worker)
         return ESP_ERR_NO_MEM;
-    t->dich_vu = d;
-    t->kho = *k;
-    if (xTaskCreate(vong_lap_luu, "luu_tru", 3072, t, 3, &t->task) != pdPASS) {
-        free(t);
+    worker->service = service;
+    worker->store = *result;
+    if (xTaskCreate(storage_task_loop, "luu_tru", 3072, worker, 3, &worker->task) != pdPASS) {
+        free(worker);
         return ESP_ERR_NO_MEM;
     }
-    *ra = t;
+    *out = worker;
     return ESP_OK;
 }

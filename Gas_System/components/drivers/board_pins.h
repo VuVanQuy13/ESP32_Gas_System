@@ -2,26 +2,26 @@
 #include "sdkconfig.h"
 /* Chính sách chân cho ESP32 classic/WROOM: tránh flash, UART0 và strapping.
  * Nút cần pull-up; LCD/relay cần output. GPIO34..39 chỉ dành ADC input. */
-#define CHAN_IO_HOP_LE(p)                                                                          \
-    ((p) == 4 || (p) == 13 || (p) == 14 || ((p) >= 16 && (p) <= 19) || ((p) >= 21 && (p) <= 23) || \
-        ((p) >= 25 && (p) <= 27) || (p) == 32 || (p) == 33)
+#define IS_VALID_OUTPUT_GPIO(gpio)                                                                       \
+    ((gpio) == 4 || (gpio) == 13 || (gpio) == 14 || ((gpio) >= 16 && (gpio) <= 19) || ((gpio) >= 21 && (gpio) <= 23) || \
+        ((gpio) >= 25 && (gpio) <= 27) || (gpio) == 32 || (gpio) == 33)
 _Static_assert(
     (CONFIG_GAS_GPIO_MQ2 >= 32 && CONFIG_GAS_GPIO_MQ2 <= 36) || CONFIG_GAS_GPIO_MQ2 == 39,
     "GPIO MQ2 khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_LCD_SDA), "GPIO LCD_SDA khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_LCD_SDA), "GPIO LCD_SDA khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_LCD_SCL), "GPIO LCD_SCL khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_LCD_SCL), "GPIO LCD_SCL khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_RELAY), "GPIO RELAY khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_RELAY), "GPIO RELAY khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_NUT_BAT), "GPIO NUT_BAT khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_NUT_BAT), "GPIO NUT_BAT khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_NUT_TAT), "GPIO NUT_TAT khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_NUT_TAT), "GPIO NUT_TAT khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_NUT_CHE_DO), "GPIO NUT_CHE_DO khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_NUT_CHE_DO), "GPIO NUT_CHE_DO khong hop le; xem menu Chan GPIO");
 _Static_assert(
-    CHAN_IO_HOP_LE(CONFIG_GAS_GPIO_NUT_CHINH), "GPIO NUT_CHINH khong hop le; xem menu Chan GPIO");
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_NUT_CHINH), "GPIO NUT_CHINH khong hop le; xem menu Chan GPIO");
 _Static_assert(CONFIG_GAS_GPIO_MQ2 != CONFIG_GAS_GPIO_LCD_SDA, "Trung GPIO: MQ2 / LCD_SDA");
 _Static_assert(CONFIG_GAS_GPIO_MQ2 != CONFIG_GAS_GPIO_LCD_SCL, "Trung GPIO: MQ2 / LCD_SCL");
 _Static_assert(CONFIG_GAS_GPIO_MQ2 != CONFIG_GAS_GPIO_RELAY, "Trung GPIO: MQ2 / RELAY");
@@ -62,5 +62,5 @@ _Static_assert(
     CONFIG_GAS_GPIO_NUT_CHE_DO != CONFIG_GAS_GPIO_NUT_CHINH, "Trung GPIO: NUT_CHE_DO / NUT_CHINH");
 
 /* ADC1: GPIO36=CH0, GPIO39=CH3, GPIO32..35=CH4..7. */
-#define CHAN_MQ2_ADC                                                                               \
+#define MQ2_ADC_CHANNEL                                                                            \
     (CONFIG_GAS_GPIO_MQ2 == 36 ? 0 : CONFIG_GAS_GPIO_MQ2 == 39 ? 3 : CONFIG_GAS_GPIO_MQ2 - 28)

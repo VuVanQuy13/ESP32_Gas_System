@@ -5258,16 +5258,6 @@
                     {
                         "children": [],
                         "depends_on": null,
-                        "help": "Gia lap ADC va relay, khong cau hinh GPIO. Co chu ky mau thap/cao/loi.\nTat de dung nut, relay, ADC va LCD I2C that. Web dung duoc o ca hai che do.\nCa hai che do deu dung NVS that.\nAuto khong bat relay khi chua co du lieu cam bien/cau hinh da luu.",
-                        "id": "DK_THU_NGHIEM",
-                        "name": "DK_THU_NGHIEM",
-                        "range": null,
-                        "title": "Chay du lieu gia, khong xuat GPIO",
-                        "type": "bool"
-                    },
-                    {
-                        "children": [],
-                        "depends_on": null,
                         "help": "Can xac dinh bang tai lieu/thuc nghiem truoc khi dung ADC that.\nGia tri 0 giu cam bien chua Ready, Auto khong bat relay.\nTham so nay khong thay the qua trinh gia hoa/hieu chinh MQ-2.",
                         "id": "MQ2_ON_DINH_GIAY",
                         "name": "MQ2_ON_DINH_GIAY",
@@ -5313,8 +5303,8 @@
                     }
                 ],
                 "depends_on": null,
-                "id": "gas_system-che-do-chay-mq-2-va-lcd",
-                "title": "Che do chay, MQ-2 va LCD",
+                "id": "gas_system-mq-2-va-lcd",
+                "title": "MQ-2 va LCD",
                 "type": "menu"
             },
             {

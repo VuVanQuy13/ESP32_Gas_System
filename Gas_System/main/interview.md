@@ -8,12 +8,12 @@ Chạy `idf.py -p COMx flash monitor` sau khi build; thay COMx bằng cổng boa
 - `cam_bien: su_kien=do_mau ... tho=... loc=... hop_le=... don_vi=ADC`: in mẫu đầu, khoảng mỗi giây và khi thay đổi tình trạng hợp lệ/gửi mẫu. `loc` chỉ có ý nghĩa khi `hop_le=1`; không phải ppm. Log không làm thay đổi chu kỳ lấy mẫu.
 - `dieu_khien`: hiện AUTO/MANUAL, trạng thái cảm biến, relay yêu cầu, lỗi đầu ra, trạng thái chỉnh/lưu, ngưỡng và bản nháp. Mẫu bình thường không lặp log điều khiển mỗi lần đọc.
 - `su_kien=canh_bao`: VUOT_NGUONG khi mẫu chạm/vượt ngưỡng, DUOI_NGUONG khi thấp hơn, CHUA_DU_DIEU_KIEN khi thiếu cấu hình hoặc cảm biến chưa sẵn sàng. Đây là so sánh ngưỡng, không thay thế hysteresis của relay; áp dụng cả Manual.
-- `su_kien=xuat_relay`: callback xuất trả thành công; không xác nhận tiếp điểm relay vật lý. Chế độ giả không xuất GPIO thật.
+- `su_kien=xuat_relay`: callback xuất trả thành công; không xác nhận tiếp điểm relay vật lý.
 - `nguon=web`: lệnh đã tới control task và mã kết quả. Mã kết quả nằm trong enum dk_ma_ket_qua ở control_core.h; 0 là thành công, 3 sai chế độ, 4 đang bận, 5 dữ liệu cũ, 7 lỗi lưu.
 - `mang: su_kien=co_ip url=http://...`: địa chỉ truy cập sau khi có IP. Kết hợp `web: su_kien=http_san_sang cong=80 websocket=/ws` để biết HTTP đã khởi động; có IP riêng chưa chứng minh HTTP sẵn sàng.
 - Có log thiếu/sai cấu hình Wi-Fi, mất kết nối kèm reason, kết nối WebSocket, ghi NVS, lỗi LCD và LCD phục hồi. Không in mật khẩu Wi-Fi hay payload web thô.
 
-Các dòng log là sự kiện phần mềm; cần board thật để xác nhận nút, ADC, GPIO và mạng thực tế. Chế độ giả không chạy task nút cứng.
+Các dòng log là sự kiện phần mềm; cần board thật để xác nhận nút, ADC, GPIO và mạng thực tế.
 
 Mapping backpack LCD không còn nằm trong menuconfig. `main/Gas_System.c` gọi `lcd_so_do_mac_dinh()` trong `components/drivers/lcd1602/lcd1602.c`: P0=RS, P1=RW, P2=E, P3=BL, P4..P7=D4..D7. Đây là đường nối nội bộ module, không phải GPIO ESP32. Khi thay backpack có mapping khác, cần sửa hàm này. Menu vẫn giữ GPIO SDA/SCL, địa chỉ/tự dò I2C và cực tính đèn nền.
 
@@ -39,7 +39,7 @@ Cau truc hien tai: button_task.c gom chong rung; sensor_task.c gom loc ADC; disp
 
 Cau hinh: idf.py menuconfig > Gas_System. Dinh nghia tap trung o main/Kconfig.projbuild. Wi-Fi nhap tai menu; wifi_local.h neu co duoc uu tien. Khong commit mat khau.
 
-Build: idf.py build. Nap khi co board: idf.py -p COMx flash monitor. Mac dinh che do thu nghiem bat; MQ-2 on dinh bang 0 nghia la chua Ready.
+Build: idf.py build. Nap khi co board: idf.py -p COMx flash monitor. MQ-2 on dinh bang 0 nghia la chua Ready.
 
 Thu muc tools va tests hien rong; cac lenh runner cu ben duoi chi la tai lieu lich su. Web duoc CMake nhung vao firmware.
 

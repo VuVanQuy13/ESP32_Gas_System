@@ -1,4 +1,4 @@
-#include "button_task.h"
+﻿#include "button_task.h"
 #include "buttons.h"
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -8,40 +8,40 @@
 
 /* Ham va du lieu phu chi dung trong tac vu nay. */
 typedef struct {
-    bool khoi_tao;
-    uint8_t ung_vien, on_dinh, cho_nhan;
-    uint64_t luc_doi[4], luc_cu;
-} nut_bo_loc;
+    bool initialize;
+    uint8_t candidate, stable, armed;
+    uint64_t change_time_ms[4], previous_time_ms;
+} button_debouncer;
 
-static bool nut_loc(nut_bo_loc *l, uint8_t m, uint64_t ms, uint8_t *ra)
+static bool button_debounce(button_debouncer *lcd, uint8_t m, uint64_t ms, uint8_t *out)
 {
-    if (!l || !ra || m > 15 || (l->khoi_tao && ms < l->luc_cu))
+    if (!lcd || !out || m > 15 || (lcd->initialize && ms < lcd->previous_time_ms))
         return false;
-    *ra = 0;
-    if (!l->khoi_tao) {
-        l->khoi_tao = true;
-        l->ung_vien = m;
-        l->on_dinh = m;
-        l->cho_nhan = (uint8_t)(~m & 15);
+    *out = 0;
+    if (!lcd->initialize) {
+        lcd->initialize = true;
+        lcd->candidate = m;
+        lcd->stable = m;
+        lcd->armed = (uint8_t)(~m & 15);
         for (unsigned i = 0; i < 4; ++i)
-            l->luc_doi[i] = ms;
+            lcd->change_time_ms[i] = ms;
     }
-    l->luc_cu = ms;
+    lcd->previous_time_ms = ms;
     for (unsigned i = 0; i < 4; ++i) {
-        uint8_t bit = (uint8_t)(1U << i);
-        if ((m ^ l->ung_vien) & bit) {
-            l->ung_vien ^= bit;
-            l->luc_doi[i] = ms;
+        uint8_t bits = (uint8_t)(1U << i);
+        if ((m ^ lcd->candidate) & bits) {
+            lcd->candidate ^= bits;
+            lcd->change_time_ms[i] = ms;
         }
 
-        if (((l->ung_vien ^ l->on_dinh) & bit) && ms - l->luc_doi[i] >= 30) {
-            l->on_dinh ^= bit;
-            if (!(l->on_dinh & bit))
-                l->cho_nhan |= bit;
+        if (((lcd->candidate ^ lcd->stable) & bits) && ms - lcd->change_time_ms[i] >= 30) {
+            lcd->stable ^= bits;
+            if (!(lcd->stable & bits))
+                lcd->armed |= bits;
             else {
-                if (l->cho_nhan & bit)
-                    *ra |= bit;
-                l->cho_nhan &= (uint8_t)~bit;
+                if (lcd->armed & bits)
+                    *out |= bits;
+                lcd->armed &= (uint8_t)~bits;
             }
         }
     }
@@ -49,46 +49,46 @@ static bool nut_loc(nut_bo_loc *l, uint8_t m, uint64_t ms, uint8_t *ra)
     return true;
 }
 
-static bool da_chay;
+static bool running;
 
-static void vong_lap_nut(void *tham_so)
+static void button_task_loop(void *parameters)
 {
-    nut_bo_loc loc = { 0 };
+    button_debouncer filtered = { 0 };
     for (;;) {
-        uint8_t muc, canh;
-        ESP_ERROR_CHECK(nut_doc(&muc));
-        if (!nut_loc(&loc, muc, (uint64_t)(esp_timer_get_time() / 1000), &canh)) {
+        uint8_t levels, edges;
+        ESP_ERROR_CHECK(button_read(&levels));
+        if (!button_debounce(&filtered, levels, (uint64_t)(esp_timer_get_time() / 1000), &edges)) {
             ESP_LOGE("nut", "su_kien=loi_bo_loc");
             abort();
         }
 
         /* Nhiều cạnh cùng lượt: thứ tự cố định ON, OFF, MODE, EDIT. */
         for (unsigned i = 0; i < 4; ++i)
-            if (canh & (1U << i)) {
-                static const char *const ten_nut[] = {
+            if (edges & (1U << i)) {
+                static const char *const button_names[] = {
                     "BAT_TANG", "TAT_GIAM", "AUTO_MANUAL", "CHINH_LUU"
                 };
-                ESP_LOGI("nut", "su_kien=nhan_on_dinh nut=%s", ten_nut[i]);
-                esp_err_t loi = dk_gui_nut(tham_so, (dk_nut)i);
-                if (loi != ESP_OK)
-                    ESP_LOGW("nut", "su_kien=gui_that_bai nut=%u loi=%d", i, loi);
+                ESP_LOGI("nut", "su_kien=nhan_on_dinh nut=%s", button_names[i]);
+                esp_err_t error = control_send_button(parameters, (button_action)i);
+                if (error != ESP_OK)
+                    ESP_LOGW("nut", "su_kien=gui_that_bai nut=%u loi=%d", i, error);
             }
         vTaskDelay(pdMS_TO_TICKS(10) > 0 ? pdMS_TO_TICKS(10) : 1);
     }
 }
 
-esp_err_t nut_bat_dau(dk_dich_vu *d)
+esp_err_t button_task_start(control_service_t *service)
 {
-    if (!d)
+    if (!service)
         return ESP_ERR_INVALID_ARG;
-    if (da_chay)
+    if (running)
         return ESP_ERR_INVALID_STATE;
-    uint8_t muc;
-    esp_err_t loi = nut_doc(&muc);
-    if (loi != ESP_OK)
-        return loi;
-    if (xTaskCreate(vong_lap_nut, "doc_nut", 3072, d, 4, NULL) != pdPASS)
+    uint8_t levels;
+    esp_err_t error = button_read(&levels);
+    if (error != ESP_OK)
+        return error;
+    if (xTaskCreate(button_task_loop, "doc_nut", 3072, service, 4, NULL) != pdPASS)
         return ESP_ERR_NO_MEM;
-    da_chay = true;
+    running = true;
     return ESP_OK;
 }

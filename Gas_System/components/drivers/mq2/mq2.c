@@ -1,50 +1,55 @@
-#include "mq2.h"
+﻿#include "mq2.h"
 #include "board_pins.h"
 #include <stddef.h>
 #include "esp_log.h"
 
-esp_err_t mq2_khoi_tao(mq2_kenh *k)
+esp_err_t mq2_initialize(mq2_channel *result)
 {
-    if (!k)
+    if (!result)
         return ESP_ERR_INVALID_ARG;
-    if (k->bo_adc || k->da_cau_hinh)
+    if (result->adc_unit || result->configured)
         return ESP_ERR_INVALID_STATE;
-    const adc_oneshot_unit_init_cfg_t bo = {
+
+    const adc_oneshot_unit_init_cfg_t unit_config = {
         .unit_id = ADC_UNIT_1,
         .ulp_mode = ADC_ULP_MODE_DISABLE
     };
-    esp_err_t loi = adc_oneshot_new_unit(&bo, &k->bo_adc);
-    if (loi != ESP_OK)
-        return loi;
-    const adc_oneshot_chan_cfg_t c = {
+    esp_err_t error = adc_oneshot_new_unit(&unit_config, &result->adc_unit);
+    if (error != ESP_OK)
+        return error;
+    const adc_oneshot_chan_cfg_t config = {
         .atten = ADC_ATTEN_DB_12,
         .bitwidth = ADC_BITWIDTH_12
     };
-    loi = adc_oneshot_config_channel(k->bo_adc, (adc_channel_t)CHAN_MQ2_ADC, &c);
-    if (loi != ESP_OK) {
-        esp_err_t don = adc_oneshot_del_unit(k->bo_adc);
-        if (don == ESP_OK)
-            k->bo_adc = NULL;
+    error = adc_oneshot_config_channel(result->adc_unit, (adc_channel_t)MQ2_ADC_CHANNEL, &config);
+    if (error != ESP_OK) {
+        esp_err_t cleanup_error = adc_oneshot_del_unit(result->adc_unit);
+        if (cleanup_error == ESP_OK)
+            result->adc_unit = NULL;
         else
-            ESP_LOGE("mq2", "su_kien=loi_thu_hoi_adc loi=%d loi_cau_hinh=%d", don, loi);
-        return loi;
+            ESP_LOGE("mq2", "su_kien=loi_thu_hoi_adc loi=%d loi_cau_hinh=%d", cleanup_error, error);
+        return error;
     }
-    k->da_cau_hinh = true;
+    result->configured = true;
     return ESP_OK;
 }
 
-esp_err_t mq2_doc(const mq2_kenh *k, int *mau)
+esp_err_t mq2_read(const mq2_channel *result, int *sample)
 {
-    if (!k || !mau)
+    // Kiểm tra đối số và xác nhận driver ADC đã được khởi tạo.
+    if (!result || !sample)
         return ESP_ERR_INVALID_ARG;
-    if (!k->da_cau_hinh || !k->bo_adc)
+    if (!result->configured || !result->adc_unit)
         return ESP_ERR_INVALID_STATE;
-    int tho = 0;
-    esp_err_t loi = adc_oneshot_read(k->bo_adc, (adc_channel_t)CHAN_MQ2_ADC, &tho);
-    if (loi != ESP_OK)
-        return loi;
-    if (tho < 0 || tho > 4095)
+
+    
+    int raw = 0;
+    esp_err_t error = adc_oneshot_read(result->adc_unit, (adc_channel_t)MQ2_ADC_CHANNEL, &raw);
+    if (error != ESP_OK)
+        return error;
+    if (raw < 0 || raw > 4095)
         return ESP_ERR_INVALID_STATE;
-    *mau = tho;
+    *sample = raw;
+    
     return ESP_OK;
 }

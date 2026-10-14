@@ -1,5 +1,36 @@
 # Codebase map
 
+## Opaque handle type aliases (2026-10-13)
+
+- `control_task.h` declares `typedef struct control_service control_service_t;`; `struct control_service` is the tag, and `control_service_t` is a typedef alias for the same struct type. Callers use `control_service_t *` for a pointer; the struct body remains private to `control_task.c`.
+- The same naming convention applies to `sensor_task_t`, `display_task_t`, and `storage_task_t`. These are opaque handles; their task state remains private in their corresponding `.c` files. This is a naming-only change with no runtime behavior change.
+
+## `control_task_start` initialization note (2026-10-11)
+
+- `control_task.h` forward-declares opaque `control_service_t`; `control_task.c` owns the `struct control_service` definition and heap allocation. `control_task_start(control_service_t **out, ...)` receives the address of the caller's handle so it can return the created service through `*out`, while its `esp_err_t` return reports success/failure separately.
+- Startup order: validate pointers/callback -> clear `*out` -> `calloc` and shallow-copy config -> initialize control core -> allocate 6 queues + response counting semaphore -> request relay OFF -> log and publish initial snapshots -> create owner task -> assign `*out`. Every failure returns an ESP error and releases allocated resources. Caller must pass a valid writable `control_service_t *` variable; callback context lifetime must cover service lifetime.
+- No source edit or validation was performed for this explanation.
+
+## Web address and source encoding (2026-10-07)
+
+- On DHCP success, `components/network/network.c` logs the access URL. `components/web_service/web_task/web_task.c` logs the actual HTTP port (normally 80). Browse to the logged URL; no static IP is configured. Checked-in Wi-Fi credentials are empty and no ignored `wifi_local.h` is present in the audited workspace, so Wi-Fi configuration is required before the board can publish an IP.
+- Firmware comments are UTF-8 Vietnamese and identifiers remain English. Browser assets remain Vietnamese. All 33 application C/header files were checked for invalid UTF-8 and obvious mojibake markers; none remain after comment repair.
+
+## Embedded naming convention (2026-10-01)
+
+- Firmware C identifiers use English: `control_*`, `sensor_*`, `button_*`, `storage_*`, `display_*`, `network_*`, `relay_*`, `mq2_*` and `lcd_*`. Vietnamese comments describe intent for a beginner. Browser assets retain Vietnamese UI text and their existing wire protocol field names to preserve compatibility.
+
+## Current runtime flow (2026-10-01)
+
+- `main/Gas_System.c` creates the real hardware setup and starts `control_task`, then storage, sensor, display and button tasks. It starts Wi-Fi and web service last.
+- `control_task` is the sole mutable owner of `dk_trang_thai`; each other task communicates through its APIs/queues or consumes its LCD/web snapshots. This serialization is the synchronization boundary between physical buttons and browser commands.
+- Sensor samples, debounced button presses, storage completion and web JSON commands become `dk_su_kien`. `control_core` applies each event, while `control_task` performs output effects (relay), sends NVS jobs and publishes snapshots.
+
+## Removed fake runtime (2026-10-01)
+
+- `main/Gas_System.c` is now a hardware-only composition root: its ADC, relay and LCD callbacks call `mq2_doc`, `relay_dat` and `lcd_i2c_xuat` directly. The previous compile-time fake-data branch is removed.
+- `main/Kconfig.projbuild`, `sdkconfig` and `sdkconfig.old` no longer contain `DK_THU_NGHIEM`. Build validation passed with ESP-IDF v5.5.4; no board was flashed.
+
 ## Main-source teaching walkthrough (2026-09-29)
 
 - `main/Gas_System.c` is the composition root. It owns startup-local configuration and passes copied configuration or pointers to persistent objects into control, storage, sensor, display, network and web modules. See current conversation for a line-linked walkthrough; no source changes.

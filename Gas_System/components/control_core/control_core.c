@@ -1,297 +1,297 @@
-#include "control_core.h"
+﻿#include "control_core.h"
 
 #include <limits.h>
 #include <stddef.h>
 #include <string.h>
 
-static bool nguong_hop_le(const dk_cau_hinh *tham_so, int gia_tri)
+static bool threshold_is_valid(const control_config *parameters, int value)
 {
-    return gia_tri >= tham_so->nguong_nho_nhat && gia_tri <= tham_so->nguong_lon_nhat;
+    return value >= parameters->minimum_threshold && value <= parameters->maximum_threshold;
 }
 
-dk_ma_ket_qua dk_khoi_tao(dk_trang_thai *trang_thai,
-    const dk_cau_hinh *tham_so,
-    uint64_t ma_khoi_dong,
-    uint64_t hien_tai,
-    bool du_lieu_luu_hop_le,
-    int nguong)
+control_result_code control_initialize(control_state *state,
+    const control_config *parameters,
+    uint64_t boot_id,
+    uint64_t now_ms,
+    bool saved_data_valid,
+    int threshold)
 {
-    if (trang_thai == NULL || tham_so == NULL || ma_khoi_dong == 0 ||
-        tham_so->thoi_gian_on_dinh_ms == 0 || tham_so->han_du_lieu_ms == 0 ||
-        tham_so->han_chinh_ms == 0 || tham_so->han_luu_ms == 0 || tham_so->so_mau_can_thiet == 0 ||
-        tham_so->nguong_nho_nhat < 1 || tham_so->nguong_lon_nhat > 4095 ||
-        tham_so->nguong_lon_nhat < tham_so->nguong_nho_nhat || tham_so->do_tre_nguong <= 0 ||
-        tham_so->do_tre_nguong > tham_so->nguong_nho_nhat ||
-        !nguong_hop_le(tham_so, tham_so->nguong_nhap_ban_dau)) {
-        return DK_KHONG_HOP_LE;
+    if (state == NULL || parameters == NULL || boot_id == 0 ||
+        parameters->warmup_time_ms == 0 || parameters->data_timeout_ms == 0 ||
+        parameters->edit_timeout_ms == 0 || parameters->save_timeout_ms == 0 || parameters->required_sample_count == 0 ||
+        parameters->minimum_threshold < 1 || parameters->maximum_threshold > 4095 ||
+        parameters->maximum_threshold < parameters->minimum_threshold || parameters->threshold_hysteresis <= 0 ||
+        parameters->threshold_hysteresis > parameters->minimum_threshold ||
+        !threshold_is_valid(parameters, parameters->initial_draft_threshold)) {
+        return CONTROL_INVALID;
     }
-    dk_cau_hinh ban_sao = *tham_so;
-    memset(trang_thai, 0, sizeof(*trang_thai));
-    trang_thai->cau_hinh = ban_sao;
-    trang_thai->da_khoi_tao = true;
-    trang_thai->ma_khoi_dong = ma_khoi_dong;
-    trang_thai->luc_khoi_dong_ms = hien_tai;
-    trang_thai->hien_tai_ms = hien_tai;
-    trang_thai->che_do = DK_TU_DONG;
-    trang_thai->tinh_trang_cam_bien = DK_DANG_ON_DINH;
-    trang_thai->trang_thai_chinh = DK_KHONG_CHINH;
-    trang_thai->cau_hinh_hop_le = du_lieu_luu_hop_le && nguong_hop_le(&ban_sao, nguong);
-    trang_thai->nguong = trang_thai->cau_hinh_hop_le ? nguong : 0;
-    return DK_THANH_CONG;
+    control_config copy = *parameters;
+    memset(state, 0, sizeof(*state));
+    state->config = copy;
+    state->initialized = true;
+    state->boot_id = boot_id;
+    state->boot_time_ms = now_ms;
+    state->current_time_ms = now_ms;
+    state->mode = CONTROL_MODE_AUTO;
+    state->sensor_status = SENSOR_WARMING_UP;
+    state->edit_status = EDIT_IDLE;
+    state->configuration_valid = saved_data_valid && threshold_is_valid(&copy, threshold);
+    state->threshold = state->configuration_valid ? threshold : 0;
+    return CONTROL_OK;
 }
 
-static void danh_gia_tu_dong(dk_trang_thai *trang_thai, bool vua_chuyen_vao)
+static void evaluate_auto_mode(control_state *state, bool just_entered)
 {
-    if (trang_thai->che_do != DK_TU_DONG) {
+    if (state->mode != CONTROL_MODE_AUTO) {
         return;
     }
 
-    if (vua_chuyen_vao || trang_thai->tinh_trang_cam_bien != DK_SAN_SANG ||
-        !trang_thai->cau_hinh_hop_le) {
-        trang_thai->relay_bat = false;
+    if (just_entered || state->sensor_status != SENSOR_READY ||
+        !state->configuration_valid) {
+        state->relay_on = false;
     }
 
-    if (trang_thai->tinh_trang_cam_bien == DK_SAN_SANG && trang_thai->cau_hinh_hop_le) {
-        if (trang_thai->mau >= trang_thai->nguong) {
-            trang_thai->relay_bat = true;
-        } else if (trang_thai->mau <= trang_thai->nguong - trang_thai->cau_hinh.do_tre_nguong) {
-            trang_thai->relay_bat = false;
+    if (state->sensor_status == SENSOR_READY && state->configuration_valid) {
+        if (state->sample >= state->threshold) {
+            state->relay_on = true;
+        } else if (state->sample <= state->threshold - state->config.threshold_hysteresis) {
+            state->relay_on = false;
         }
     }
 }
 
-static void bao_loi_cam_bien(dk_trang_thai *trang_thai)
+static void mark_sensor_error(control_state *state)
 {
-    trang_thai->tinh_trang_cam_bien = DK_LOI_CAM_BIEN;
-    trang_thai->so_mau_lien_tiep = 0;
-    danh_gia_tu_dong(trang_thai, false);
+    state->sensor_status = SENSOR_ERROR;
+    state->consecutive_sample_count = 0;
+    evaluate_auto_mode(state, false);
 }
 
-static void kiem_tra_cac_han(dk_trang_thai *trang_thai)
+static void check_timeouts(control_state *state)
 {
-    uint64_t moc_cuoi =
-        trang_thai->da_co_mau ? trang_thai->luc_lay_mau_ms : trang_thai->luc_khoi_dong_ms;
-    if (trang_thai->hien_tai_ms - moc_cuoi >= trang_thai->cau_hinh.han_du_lieu_ms) {
-        bao_loi_cam_bien(trang_thai);
+    uint64_t last_mark =
+        state->has_sample ? state->sample_time_ms : state->boot_time_ms;
+    if (state->current_time_ms - last_mark >= state->config.data_timeout_ms) {
+        mark_sensor_error(state);
     }
 
-    if (trang_thai->trang_thai_chinh == DK_DANG_CHINH &&
-        trang_thai->hien_tai_ms - trang_thai->luc_thao_tac_chinh_ms >=
-            trang_thai->cau_hinh.han_chinh_ms) {
-        trang_thai->trang_thai_chinh = DK_KHONG_CHINH;
-        trang_thai->ban_nhap = 0;
+    if (state->edit_status == EDIT_ACTIVE &&
+        state->current_time_ms - state->last_edit_time_ms >=
+            state->config.edit_timeout_ms) {
+        state->edit_status = EDIT_IDLE;
+        state->draft = 0;
     }
 
-    if (trang_thai->trang_thai_chinh == DK_DANG_LUU &&
-        trang_thai->hien_tai_ms - trang_thai->luc_bat_dau_luu_ms >=
-            trang_thai->cau_hinh.han_luu_ms) {
+    if (state->edit_status == EDIT_SAVING &&
+        state->current_time_ms - state->save_start_time_ms >=
+            state->config.save_timeout_ms) {
         /* Có thể đã ghi thành công: giữ giao dịch này chờ xác minh. */
-        trang_thai->chua_ro_ket_qua_luu = true;
+        state->save_result_unknown = true;
     }
 }
 
-static dk_ma_ket_qua tiep_nhan_mau(dk_trang_thai *trang_thai, const dk_su_kien *su_kien)
+static control_result_code accept_sample(control_state *state, const control_event *event)
 {
-    if (su_kien->so_thu_tu == 0 || su_kien->so_thu_tu <= trang_thai->thu_tu_mau ||
-        su_kien->luc_lay_mau_ms < trang_thai->luc_khoi_dong_ms ||
-        su_kien->luc_lay_mau_ms > trang_thai->hien_tai_ms ||
-        (trang_thai->thu_tu_mau != 0 && su_kien->luc_lay_mau_ms <= trang_thai->luc_lay_mau_ms)) {
-        return DK_DU_LIEU_CU;
+    if (event->sequence == 0 || event->sequence <= state->sample_sequence ||
+        event->sample_time_ms < state->boot_time_ms ||
+        event->sample_time_ms > state->current_time_ms ||
+        (state->sample_sequence != 0 && event->sample_time_ms <= state->sample_time_ms)) {
+        return CONTROL_STALE;
     }
-    bool bi_mat_mau =
-        trang_thai->thu_tu_mau != 0 && su_kien->so_thu_tu - trang_thai->thu_tu_mau != 1;
-    trang_thai->thu_tu_mau = su_kien->so_thu_tu;
-    trang_thai->luc_lay_mau_ms = su_kien->luc_lay_mau_ms;
-    trang_thai->da_co_mau = true;
-    if (!su_kien->hop_le || su_kien->gia_tri < 0 || su_kien->gia_tri > 4095 ||
-        trang_thai->hien_tai_ms - su_kien->luc_lay_mau_ms >= trang_thai->cau_hinh.han_du_lieu_ms) {
-        bao_loi_cam_bien(trang_thai);
-        return DK_KHONG_HOP_LE;
-    }
-
-    if (bi_mat_mau) {
-        bao_loi_cam_bien(trang_thai);
-    }
-    bool truoc_do_san_sang = trang_thai->tinh_trang_cam_bien == DK_SAN_SANG;
-    trang_thai->mau = su_kien->gia_tri;
-    if (trang_thai->so_mau_lien_tiep < trang_thai->cau_hinh.so_mau_can_thiet) {
-        ++trang_thai->so_mau_lien_tiep;
+    bool sample_gap =
+        state->sample_sequence != 0 && event->sequence - state->sample_sequence != 1;
+    state->sample_sequence = event->sequence;
+    state->sample_time_ms = event->sample_time_ms;
+    state->has_sample = true;
+    if (!event->is_valid || event->value < 0 || event->value > 4095 ||
+        state->current_time_ms - event->sample_time_ms >= state->config.data_timeout_ms) {
+        mark_sensor_error(state);
+        return CONTROL_INVALID;
     }
 
-    if (trang_thai->hien_tai_ms - trang_thai->luc_khoi_dong_ms >=
-            trang_thai->cau_hinh.thoi_gian_on_dinh_ms &&
-        trang_thai->so_mau_lien_tiep >= trang_thai->cau_hinh.so_mau_can_thiet) {
-        trang_thai->tinh_trang_cam_bien = DK_SAN_SANG;
+    if (sample_gap) {
+        mark_sensor_error(state);
     }
-    danh_gia_tu_dong(
-        trang_thai, !truoc_do_san_sang && trang_thai->tinh_trang_cam_bien == DK_SAN_SANG);
-    return DK_THANH_CONG;
+    bool was_ready = state->sensor_status == SENSOR_READY;
+    state->sample = event->value;
+    if (state->consecutive_sample_count < state->config.required_sample_count) {
+        ++state->consecutive_sample_count;
+    }
+
+    if (state->current_time_ms - state->boot_time_ms >=
+            state->config.warmup_time_ms &&
+        state->consecutive_sample_count >= state->config.required_sample_count) {
+        state->sensor_status = SENSOR_READY;
+    }
+    evaluate_auto_mode(
+        state, !was_ready && state->sensor_status == SENSOR_READY);
+    return CONTROL_OK;
 }
 
-static dk_ma_ket_qua kiem_tra_phien_chinh(
-    const dk_trang_thai *trang_thai, const dk_su_kien *su_kien)
+static control_result_code validate_edit_session(
+    const control_state *state, const control_event *event)
 {
-    if (trang_thai->trang_thai_chinh == DK_DANG_LUU) {
-        return DK_DANG_BAN;
+    if (state->edit_status == EDIT_SAVING) {
+        return CONTROL_BUSY;
     }
 
-    if (trang_thai->trang_thai_chinh != DK_DANG_CHINH) {
-        return DK_KHONG_CO_PHIEN_CHINH;
+    if (state->edit_status != EDIT_ACTIVE) {
+        return CONTROL_NO_EDIT_SESSION;
     }
 
-    if (su_kien->ma_phien_chinh != trang_thai->ma_phien_chinh ||
-        su_kien->phien_ban_mong_doi != trang_thai->phien_ban_nhap) {
-        return DK_DU_LIEU_CU;
+    if (event->edit_session_id != state->edit_session_id ||
+        event->expected_revision != state->draft_revision) {
+        return CONTROL_STALE;
     }
 
-    return DK_THANH_CONG;
+    return CONTROL_OK;
 }
 
-static dk_ma_ket_qua ap_dung_su_kien(
-    dk_trang_thai *trang_thai, const dk_su_kien *su_kien, dk_ket_qua *ket_qua)
+static control_result_code apply_event(
+    control_state *state, const control_event *event, control_result *result_event)
 {
-    dk_ma_ket_qua ma_ket_qua;
-    if (su_kien->ma_khoi_dong != trang_thai->ma_khoi_dong) {
-        return DK_DU_LIEU_CU;
+    control_result_code result_code;
+    if (event->boot_id != state->boot_id) {
+        return CONTROL_STALE;
     }
-    switch (su_kien->loai) {
-    case DK_KIEM_TRA_THOI_GIAN:
-        return DK_THANH_CONG;
-    case DK_MAU_MOI:
-        return tiep_nhan_mau(trang_thai, su_kien);
-    case DK_DAT_CHE_DO:
-        if (su_kien->gia_tri != DK_TU_DONG && su_kien->gia_tri != DK_THU_CONG)
-            return DK_KHONG_HOP_LE;
-        if (trang_thai->trang_thai_chinh != DK_KHONG_CHINH)
-            return DK_DANG_BAN;
-        if (trang_thai->che_do != (dk_che_do)su_kien->gia_tri) {
-            trang_thai->che_do = (dk_che_do)su_kien->gia_tri;
-            danh_gia_tu_dong(trang_thai, true);
+    switch (event->type) {
+    case CONTROL_EVENT_CHECK_TIMEOUTS:
+        return CONTROL_OK;
+    case CONTROL_EVENT_NEW_SAMPLE:
+        return accept_sample(state, event);
+    case CONTROL_EVENT_SET_MODE:
+        if (event->value != CONTROL_MODE_AUTO && event->value != CONTROL_MODE_MANUAL)
+            return CONTROL_INVALID;
+        if (state->edit_status != EDIT_IDLE)
+            return CONTROL_BUSY;
+        if (state->mode != (control_mode)event->value) {
+            state->mode = (control_mode)event->value;
+            evaluate_auto_mode(state, true);
         }
 
-        return DK_THANH_CONG;
-    case DK_DAT_RELAY:
-        if (su_kien->gia_tri != 0 && su_kien->gia_tri != 1)
-            return DK_KHONG_HOP_LE;
-        if (trang_thai->trang_thai_chinh != DK_KHONG_CHINH)
-            return DK_DANG_BAN;
-        if (trang_thai->che_do != DK_THU_CONG)
-            return DK_SAI_CHE_DO;
-        trang_thai->relay_bat = su_kien->gia_tri != 0;
-        return DK_THANH_CONG;
-    case DK_BAT_DAU_CHINH:
-        if (trang_thai->trang_thai_chinh != DK_KHONG_CHINH)
-            return DK_DANG_BAN;
-        if (trang_thai->ma_phien_chinh == UINT64_MAX)
-            return DK_HET_MA_DINH_DANH;
-        ++trang_thai->ma_phien_chinh;
-        trang_thai->phien_ban_nhap = 1;
-        trang_thai->ban_nhap = trang_thai->cau_hinh_hop_le
-                                   ? trang_thai->nguong
-                                   : trang_thai->cau_hinh.nguong_nhap_ban_dau;
-        trang_thai->luc_thao_tac_chinh_ms = trang_thai->hien_tai_ms;
-        trang_thai->trang_thai_chinh = DK_DANG_CHINH;
-        return DK_THANH_CONG;
-    case DK_DAT_BAN_NHAP:
-        ma_ket_qua = kiem_tra_phien_chinh(trang_thai, su_kien);
-        if (ma_ket_qua != DK_THANH_CONG)
-            return ma_ket_qua;
-        if (!nguong_hop_le(&trang_thai->cau_hinh, su_kien->gia_tri))
-            return DK_KHONG_HOP_LE;
-        if (su_kien->gia_tri != trang_thai->ban_nhap) {
-            if (trang_thai->phien_ban_nhap == UINT64_MAX)
-                return DK_HET_MA_DINH_DANH;
-            trang_thai->ban_nhap = su_kien->gia_tri;
-            ++trang_thai->phien_ban_nhap;
+        return CONTROL_OK;
+    case CONTROL_EVENT_SET_RELAY:
+        if (event->value != 0 && event->value != 1)
+            return CONTROL_INVALID;
+        if (state->edit_status != EDIT_IDLE)
+            return CONTROL_BUSY;
+        if (state->mode != CONTROL_MODE_MANUAL)
+            return CONTROL_WRONG_MODE;
+        state->relay_on = event->value != 0;
+        return CONTROL_OK;
+    case CONTROL_EVENT_BEGIN_EDIT:
+        if (state->edit_status != EDIT_IDLE)
+            return CONTROL_BUSY;
+        if (state->edit_session_id == UINT64_MAX)
+            return CONTROL_ID_EXHAUSTED;
+        ++state->edit_session_id;
+        state->draft_revision = 1;
+        state->draft = state->configuration_valid
+                                   ? state->threshold
+                                   : state->config.initial_draft_threshold;
+        state->last_edit_time_ms = state->current_time_ms;
+        state->edit_status = EDIT_ACTIVE;
+        return CONTROL_OK;
+    case CONTROL_EVENT_SET_DRAFT:
+        result_code = validate_edit_session(state, event);
+        if (result_code != CONTROL_OK)
+            return result_code;
+        if (!threshold_is_valid(&state->config, event->value))
+            return CONTROL_INVALID;
+        if (event->value != state->draft) {
+            if (state->draft_revision == UINT64_MAX)
+                return CONTROL_ID_EXHAUSTED;
+            state->draft = event->value;
+            ++state->draft_revision;
         }
-        trang_thai->luc_thao_tac_chinh_ms = trang_thai->hien_tai_ms;
-        return DK_THANH_CONG;
-    case DK_YEU_CAU_LUU:
-        ma_ket_qua = kiem_tra_phien_chinh(trang_thai, su_kien);
-        if (ma_ket_qua != DK_THANH_CONG)
-            return ma_ket_qua;
-        if (trang_thai->ma_lan_luu == UINT64_MAX)
-            return DK_HET_MA_DINH_DANH;
-        ++trang_thai->ma_lan_luu;
-        trang_thai->trang_thai_chinh = DK_DANG_LUU;
-        trang_thai->luc_bat_dau_luu_ms = trang_thai->hien_tai_ms;
-        trang_thai->chua_ro_ket_qua_luu = false;
-        ket_qua->can_luu = true;
-        ket_qua->ma_lan_luu = trang_thai->ma_lan_luu;
-        ket_qua->nguong_can_luu = trang_thai->ban_nhap;
-        return DK_THANH_CONG;
-    case DK_LUU_THANH_CONG:
-    case DK_LUU_THAT_BAI:
-        if (trang_thai->trang_thai_chinh != DK_DANG_LUU ||
-            su_kien->ma_lan_luu != trang_thai->ma_lan_luu)
-            return DK_DU_LIEU_CU;
-        trang_thai->chua_ro_ket_qua_luu = false;
-        if (su_kien->loai == DK_LUU_THAT_BAI) {
-            trang_thai->trang_thai_chinh = DK_DANG_CHINH;
-            trang_thai->luc_thao_tac_chinh_ms = trang_thai->hien_tai_ms;
-            return DK_LOI_LUU_TRU;
+        state->last_edit_time_ms = state->current_time_ms;
+        return CONTROL_OK;
+    case CONTROL_EVENT_SAVE_DRAFT:
+        result_code = validate_edit_session(state, event);
+        if (result_code != CONTROL_OK)
+            return result_code;
+        if (state->save_id == UINT64_MAX)
+            return CONTROL_ID_EXHAUSTED;
+        ++state->save_id;
+        state->edit_status = EDIT_SAVING;
+        state->save_start_time_ms = state->current_time_ms;
+        state->save_result_unknown = false;
+        result_event->needs_save = true;
+        result_event->save_id = state->save_id;
+        result_event->threshold_to_save = state->draft;
+        return CONTROL_OK;
+    case CONTROL_EVENT_SAVE_OK:
+    case CONTROL_EVENT_SAVE_FAILED:
+        if (state->edit_status != EDIT_SAVING ||
+            event->save_id != state->save_id)
+            return CONTROL_STALE;
+        state->save_result_unknown = false;
+        if (event->type == CONTROL_EVENT_SAVE_FAILED) {
+            state->edit_status = EDIT_ACTIVE;
+            state->last_edit_time_ms = state->current_time_ms;
+            return CONTROL_STORAGE_ERROR;
         }
-        trang_thai->nguong = trang_thai->ban_nhap;
-        trang_thai->cau_hinh_hop_le = true;
-        trang_thai->trang_thai_chinh = DK_KHONG_CHINH;
-        trang_thai->ban_nhap = 0;
-        danh_gia_tu_dong(trang_thai, false);
-        return DK_THANH_CONG;
+        state->threshold = state->draft;
+        state->configuration_valid = true;
+        state->edit_status = EDIT_IDLE;
+        state->draft = 0;
+        evaluate_auto_mode(state, false);
+        return CONTROL_OK;
     default:
-        return DK_KHONG_HOP_LE;
+        return CONTROL_INVALID;
     }
 }
 
-dk_ma_ket_qua dk_xu_ly_su_kien(
-    dk_trang_thai *trang_thai, const dk_su_kien *su_kien, uint64_t hien_tai, dk_ket_qua *ket_qua)
+control_result_code control_process_event(
+    control_state *state, const control_event *event, uint64_t now_ms, control_result *result_event)
 {
-    if (ket_qua == NULL)
-        return DK_KHONG_HOP_LE;
-    memset(ket_qua, 0, sizeof(*ket_qua));
-    ket_qua->ma_ket_qua = DK_KHONG_HOP_LE;
-    if (trang_thai == NULL || su_kien == NULL || !trang_thai->da_khoi_tao)
-        return DK_KHONG_HOP_LE;
-    ket_qua->su_kien = su_kien->loai;
-    ket_qua->thoi_diem_ms = hien_tai;
-    bool relay_truoc_do = trang_thai->relay_bat;
-    if (hien_tai < trang_thai->hien_tai_ms) {
-        ket_qua->ma_ket_qua = DK_LOI_THOI_GIAN;
+    if (result_event == NULL)
+        return CONTROL_INVALID;
+    memset(result_event, 0, sizeof(*result_event));
+    result_event->result_code = CONTROL_INVALID;
+    if (state == NULL || event == NULL || !state->initialized)
+        return CONTROL_INVALID;
+    result_event->event = event->type;
+    result_event->event_time_ms = now_ms;
+    bool previous_relay = state->relay_on;
+    if (now_ms < state->current_time_ms) {
+        result_event->result_code = CONTROL_TIME_ERROR;
     } else {
-        trang_thai->hien_tai_ms = hien_tai;
+        state->current_time_ms = now_ms;
 
         /* Lệnh bị từ chối vẫn phải cho phép phát hiện dữ liệu cảm biến hết hạn. */
-        kiem_tra_cac_han(trang_thai);
-        ket_qua->ma_ket_qua = ap_dung_su_kien(trang_thai, su_kien, ket_qua);
+        check_timeouts(state);
+        result_event->result_code = apply_event(state, event, result_event);
     }
-    ket_qua->relay_thay_doi = relay_truoc_do != trang_thai->relay_bat;
-    ket_qua->relay_bat = trang_thai->relay_bat;
-    ket_qua->che_do = trang_thai->che_do;
-    ket_qua->tinh_trang_cam_bien = trang_thai->tinh_trang_cam_bien;
-    ket_qua->trang_thai_chinh = trang_thai->trang_thai_chinh;
-    ket_qua->chua_ro_ket_qua_luu = trang_thai->chua_ro_ket_qua_luu;
-    return ket_qua->ma_ket_qua;
+    result_event->relay_changed = previous_relay != state->relay_on;
+    result_event->relay_on = state->relay_on;
+    result_event->mode = state->mode;
+    result_event->sensor_status = state->sensor_status;
+    result_event->edit_status = state->edit_status;
+    result_event->save_result_unknown = state->save_result_unknown;
+    return result_event->result_code;
 }
 
-static uint64_t tinh_han(uint64_t bat_dau, uint64_t khoang_thoi_gian)
+static uint64_t calculate_deadline(uint64_t start, uint64_t khoang_thoi_gian)
 {
-    return khoang_thoi_gian > UINT64_MAX - bat_dau ? UINT64_MAX : bat_dau + khoang_thoi_gian;
+    return khoang_thoi_gian > UINT64_MAX - start ? UINT64_MAX : start + khoang_thoi_gian;
 }
 
-uint64_t dk_han_ke_tiep(const dk_trang_thai *trang_thai)
+uint64_t control_next_deadline(const control_state *state)
 {
-    if (trang_thai == NULL || !trang_thai->da_khoi_tao)
+    if (state == NULL || !state->initialized)
         return UINT64_MAX;
-    uint64_t han_tiep = UINT64_MAX;
-    if (trang_thai->tinh_trang_cam_bien != DK_LOI_CAM_BIEN || trang_thai->so_mau_lien_tiep > 0) {
-        han_tiep = tinh_han(
-            trang_thai->da_co_mau ? trang_thai->luc_lay_mau_ms : trang_thai->luc_khoi_dong_ms,
-            trang_thai->cau_hinh.han_du_lieu_ms);
+    uint64_t next_deadline = UINT64_MAX;
+    if (state->sensor_status != SENSOR_ERROR || state->consecutive_sample_count > 0) {
+        next_deadline = calculate_deadline(
+            state->has_sample ? state->sample_time_ms : state->boot_time_ms,
+            state->config.data_timeout_ms);
     }
-    uint64_t han_chinh_luu = UINT64_MAX;
-    if (trang_thai->trang_thai_chinh == DK_DANG_CHINH)
-        han_chinh_luu =
-            tinh_han(trang_thai->luc_thao_tac_chinh_ms, trang_thai->cau_hinh.han_chinh_ms);
-    if (trang_thai->trang_thai_chinh == DK_DANG_LUU && !trang_thai->chua_ro_ket_qua_luu)
-        han_chinh_luu = tinh_han(trang_thai->luc_bat_dau_luu_ms, trang_thai->cau_hinh.han_luu_ms);
-    return han_chinh_luu < han_tiep ? han_chinh_luu : han_tiep;
+    uint64_t save_deadline = UINT64_MAX;
+    if (state->edit_status == EDIT_ACTIVE)
+        save_deadline =
+            calculate_deadline(state->last_edit_time_ms, state->config.edit_timeout_ms);
+    if (state->edit_status == EDIT_SAVING && !state->save_result_unknown)
+        save_deadline = calculate_deadline(state->save_start_time_ms, state->config.save_timeout_ms);
+    return save_deadline < next_deadline ? save_deadline : next_deadline;
 }

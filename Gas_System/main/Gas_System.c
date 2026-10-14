@@ -10,92 +10,58 @@
 #include "mq2.h"
 #include "display_task.h"
 #include "lcd1602_i2c.h"
-#include "esp_timer.h"
 #include "esp_random.h"
 #include "network.h"
 #include "web_service.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 
-static const char *NHAN = "ung_dung";
+static const char *TAG = "ung_dung";
 
-#if CONFIG_DK_THU_NGHIEM
-static esp_err_t xuat_lcd_gia(const lcd_khung *k, void *ctx)
+/* Đối tượng giữ handle ADC1; phải sống suốt thời gian sensor task chạy. */
+static mq2_channel mq2_adc_channel;
+static lcd_i2c lcd_display;
+
+static esp_err_t read_real_adc(int *sample, void *context)
 {
-    (void)ctx;
-    ESP_LOGI("lcd_gia", "dong_1=[%s] dong_2=[%s]", k->dong[0], k->dong[1]);
-    return ESP_OK;
+    return mq2_read(context, sample);
 }
 
-static esp_err_t doc_adc_gia(int *mau, void *ngu_canh)
+static esp_err_t set_real_relay(bool on, void *context)
 {
-    (void)ngu_canh;
-
-    /* Chu kỳ demo 15 giây: thấp 5 s, cao 5 s, lỗi 1 s, thấp 4 s. */
-    unsigned pha = (unsigned)((esp_timer_get_time() / 1000000) % 15);
-    if (pha == 10)
-        return ESP_ERR_TIMEOUT;
-    *mau = pha >= 5 && pha < 10 ? 900 : 400;
-    return ESP_OK;
+    (void)context;
+    return relay_set(on);
 }
 
-static esp_err_t xuat_relay_gia(bool bat, void *ngu_canh)
-{
-    (void)ngu_canh;
-    ESP_LOGI(NHAN, "che_do=gia_lap relay=%d gpio=khong_su_dung", bat);
-    return ESP_OK;
-}
-#else
-static mq2_kenh kenh_mq2;
-static lcd_i2c man_hinh;
-
-static esp_err_t doc_adc_that(int *mau, void *ngu_canh)
-{
-    return mq2_doc(ngu_canh, mau);
-}
-
-static esp_err_t xuat_relay_that(bool bat, void *ngu_canh)
-{
-    (void)ngu_canh;
-    return relay_dat(bat);
-}
-#endif
-
+/* Điểm vào ESP-IDF: tạo tài nguyên dùng chung rồi khởi chạy từng FreeRTOS task. */
 void app_main(void)
 {
-    /* Ngưỡng dùng ADC thô; thời gian ổn định thật lấy từ cấu hình bên dưới. */
-    dk_thiet_lap_tac_vu thiet_lap = {
-        .loi = {
-            .thoi_gian_on_dinh_ms = 1000,
-            .han_du_lieu_ms = 500,
-            .han_chinh_ms = 30000,
-            .han_luu_ms = 2000,
-            .so_mau_can_thiet = 3,
-            .nguong_nho_nhat = 100,
-            .nguong_lon_nhat = 4000,
-            .do_tre_nguong = 50,
-            .nguong_nhap_ban_dau = 600
+    /* Ngưỡng dùng ADC thô. MQ-2 chỉ sẵn sàng sau thời gian cấu hình và các mẫu hợp lệ. */
+    control_task_config setup = {
+        .policy = {
+            .warmup_time_ms = CONFIG_MQ2_ON_DINH_GIAY > 0
+                                       ? (uint64_t)CONFIG_MQ2_ON_DINH_GIAY * 1000
+                                       : UINT64_MAX,
+            .data_timeout_ms = 500,
+            .edit_timeout_ms = 30000,
+            .save_timeout_ms = 2000,
+            .required_sample_count = 3,
+            .minimum_threshold = 100,
+            .maximum_threshold = 4000,
+            .threshold_hysteresis = 50,
+            .initial_draft_threshold = 600
         },
-        .ma_khoi_dong = 1,
-        .du_lieu_luu_hop_le = false,
-#if CONFIG_DK_THU_NGHIEM
-        .xuat_relay = xuat_relay_gia,
-#else
-        .xuat_relay = xuat_relay_that,
-#endif
+        .boot_id = 1,
+        .saved_data_valid = false,
+        .set_relay = set_real_relay,
     };
 
     /* Nhận dạng boot 64-bit, không phải khóa xác thực. Tạo trước khi ADC hoạt động. */
-    thiet_lap.ma_khoi_dong = ((uint64_t)esp_random() << 32) | esp_random();
-    if (!thiet_lap.ma_khoi_dong)
-        thiet_lap.ma_khoi_dong = 1;
-#if !CONFIG_DK_THU_NGHIEM
+    setup.boot_id = ((uint64_t)esp_random() << 32) | esp_random();
+    if (!setup.boot_id)
+        setup.boot_id = 1;
     /* 0 nghĩa chưa xác định qua tài liệu/thực nghiệm: chưa cho Ready.
-     * Không dùng thời gian demo 1 giây cho MQ-2 thật. */
-    thiet_lap.loi.thoi_gian_on_dinh_ms =
-        CONFIG_MQ2_ON_DINH_GIAY > 0 ? (uint64_t)CONFIG_MQ2_ON_DINH_GIAY * 1000 : UINT64_MAX;
-    ESP_ERROR_CHECK(relay_khoi_tao());
-    ESP_LOGI(NHAN,
+     * Khi đó Auto vẫn giữ relay tắt. */
+
+    ESP_LOGI(TAG,
         "su_kien=cau_hinh_gpio mq2=%d relay=%d sda=%d scl=%d nut=%d,%d,%d,%d",
         CONFIG_GAS_GPIO_MQ2,
         CONFIG_GAS_GPIO_RELAY,
@@ -104,82 +70,73 @@ void app_main(void)
         CONFIG_GAS_GPIO_NUT_BAT,
         CONFIG_GAS_GPIO_NUT_TAT,
         CONFIG_GAS_GPIO_NUT_CHE_DO,
-        CONFIG_GAS_GPIO_NUT_CHINH);
-    ESP_ERROR_CHECK(nut_khoi_tao());
-    esp_err_t loi_adc = mq2_khoi_tao(&kenh_mq2);
-    if (loi_adc != ESP_OK)
-        ESP_LOGE(NHAN, "su_kien=loi_khoi_tao_adc loi=%d", loi_adc);
+        CONFIG_GAS_GPIO_NUT_CHINH
+    );
+
+    ESP_ERROR_CHECK(relay_initialize());
+    ESP_ERROR_CHECK(button_initialize());
+    esp_err_t adc_error = mq2_initialize(&mq2_adc_channel);
+    if (adc_error != ESP_OK)
+        ESP_LOGE(TAG, "su_kien=loi_khoi_tao_adc loi=%d", adc_error);
     if (CONFIG_MQ2_ON_DINH_GIAY == 0)
-        ESP_LOGW(NHAN, "su_kien=chua_cau_hinh_on_dinh_mq2 san_sang=bi_khoa");
-#endif
+        ESP_LOGW(TAG, "su_kien=chua_cau_hinh_on_dinh_mq2 san_sang=bi_khoa");
 
-    luu_kho kho = { 0 };
-    esp_err_t loi_luu =
-        luu_khoi_tao(&kho, thiet_lap.loi.nguong_nho_nhat, thiet_lap.loi.nguong_lon_nhat);
-    if (loi_luu == ESP_OK)
-        loi_luu = luu_doc(&kho, &thiet_lap.nguong_da_luu);
-    thiet_lap.du_lieu_luu_hop_le = loi_luu == ESP_OK;
-    if (loi_luu != ESP_OK)
-        ESP_LOGW(NHAN, "su_kien=can_cau_hinh loi_nvs=%d", loi_luu);
+    storage_store store = { 0 };
+    esp_err_t storage_error =
+        storage_initialize(&store, setup.policy.minimum_threshold, setup.policy.maximum_threshold);
+
+    if (storage_error == ESP_OK)
+        storage_error = storage_read(&store, &setup.saved_threshold);
+    setup.saved_data_valid = storage_error == ESP_OK;
+    if (storage_error != ESP_OK)
+        ESP_LOGW(TAG, "su_kien=can_cau_hinh loi_nvs=%d", storage_error);
     else
-        ESP_LOGI(NHAN, "su_kien=khoi_phuc_nguong nguong=%d", thiet_lap.nguong_da_luu);
+        ESP_LOGI(TAG, "su_kien=khoi_phuc_nguong nguong=%d", setup.saved_threshold);
 
-    dk_dich_vu *dich_vu = NULL;
-    ESP_ERROR_CHECK(dk_bat_dau(&dich_vu, &thiet_lap));
+    control_service_t *service = NULL;
+    ESP_ERROR_CHECK(control_task_start(&service, &setup));
 
-    luu_tac_vu *tac_vu_luu = NULL;
-    ESP_ERROR_CHECK(luu_bat_dau(&tac_vu_luu, dich_vu, &kho));
+    storage_task_t *storage_worker = NULL;
+    ESP_ERROR_CHECK(storage_task_start(&storage_worker, service, &store));
 
-    const cb_thiet_lap cau_hinh_cb = {
-        .ma_khoi_dong = thiet_lap.ma_khoi_dong,
-        .chu_ky_ms = 100,
-        .han_mau_ms = 500,
-#if CONFIG_DK_THU_NGHIEM
-        .doc_adc = doc_adc_gia,
-#else
-        .doc_adc = doc_adc_that,
-        .ngu_canh = &kenh_mq2,
-#endif
+    const sensor_task_config sensor_setup = {
+        .boot_id = setup.boot_id,
+        .period_ms = 100,
+        .sample_timeout_ms = 500,
+        .read_adc = read_real_adc,
+        .context = &mq2_adc_channel,
     };
-    cb_tac_vu *tac_vu_cb = NULL;
-    ESP_ERROR_CHECK(cb_bat_dau(&tac_vu_cb, dich_vu, &cau_hinh_cb));
+    sensor_task_t *sensor_worker = NULL;
+    ESP_ERROR_CHECK(sensor_task_start(&sensor_worker, service, &sensor_setup));
 
-    ht_thiet_lap cau_hinh_ht;
-#if CONFIG_DK_THU_NGHIEM
-    cau_hinh_ht = (ht_thiet_lap){
-        .xuat = xuat_lcd_gia
-    };
-#else
-    man_hinh.dia_chi = CONFIG_LCD_DIA_CHI;
+    lcd_display.address = CONFIG_LCD_DIA_CHI;
 #if CONFIG_LCD_TU_TIM
-    man_hinh.tu_tim_dia_chi = true;
+    lcd_display.auto_find_address = true;
 #endif
-    man_hinh.so_do = lcd_so_do_mac_dinh();
+
+    lcd_display.mapping = lcd_default_mapping();
 #if CONFIG_LCD_DEN_MUC_CAO
-    man_hinh.so_do.den_muc_cao = true;
+    lcd_display.mapping.backlight_active_high = true;
 #else
-    man_hinh.so_do.den_muc_cao = false;
+    lcd_display.mapping.backlight_active_high = false;
 #endif
-    cau_hinh_ht = (ht_thiet_lap){
-        .xuat = lcd_i2c_xuat,
-        .ngu_canh = &man_hinh
+    display_task_config display_setup = {
+        .output = lcd_i2c_output,
+        .context = &lcd_display
     };
-#endif
-    ht_tac_vu *tac_vu_ht = NULL;
-    ESP_ERROR_CHECK(ht_bat_dau(&tac_vu_ht, dich_vu, &cau_hinh_ht));
-#if CONFIG_DK_THU_NGHIEM
-    ESP_LOGW(NHAN, "che_do=gia_lap cam_bien=du_lieu_gia don_vi=adc_tho");
-#else
-    ESP_ERROR_CHECK(nut_bat_dau(dich_vu));
-    ESP_LOGW(NHAN,
+
+    display_task_t *display_worker = NULL;
+    ESP_ERROR_CHECK(display_task_start(&display_worker, service, &display_setup));
+
+    ESP_ERROR_CHECK(button_task_start(service));
+    ESP_LOGW(TAG,
         "che_do=phan_cung cam_bien=adc1 gpio=%d luu_tru=nvs don_vi=adc_tho",
         CONFIG_GAS_GPIO_MQ2);
-#endif
     /* HTTP server là consumer phản hồi lệnh duy nhất; app_main không lấy mất ACK. */
 
-    esp_err_t loi_mang = mang_bat_dau();
-    if (loi_mang == ESP_OK)
-        loi_mang = web_bat_dau(dich_vu);
-    if (loi_mang != ESP_OK)
-        ESP_LOGW(NHAN, "su_kien=web_chua_san_sang loi=%d", loi_mang);
+    esp_err_t network_error = network_start();
+    if (network_error == ESP_OK)
+        network_error = web_start(service);
+    if (network_error != ESP_OK)
+        ESP_LOGW(TAG, "su_kien=web_chua_san_sang loi=%d", network_error);
 }

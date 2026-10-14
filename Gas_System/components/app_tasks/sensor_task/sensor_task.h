@@ -1,15 +1,16 @@
 #pragma once
 #include "control_task.h"
-typedef struct cb_tac_vu cb_tac_vu;
+/* `sensor_task_t` là bí danh của struct nội bộ được định nghĩa trong sensor_task.c. */
+typedef struct sensor_task sensor_task_t;
 
 typedef struct {
-    uint64_t ma_khoi_dong;
-    unsigned chu_ky_ms, han_mau_ms;
+    uint64_t boot_id;
+    unsigned period_ms, sample_timeout_ms;
 
     /* Callback ngắn, chỉ đọc mẫu thô. Ngu cảnh tồn tại đến reset. */
-    esp_err_t (*doc_adc)(int *mau, void *ngu_canh);
-    void *ngu_canh;
-} cb_thiet_lap;
+    esp_err_t (*read_adc)(int *sample, void *context);
+    void *context;
+} sensor_task_config;
 
 /* Gọi một lần sau khi tạo dịch vụ điều khiển; task sở hữu bộ lọc và sequence. */
-esp_err_t cb_bat_dau(cb_tac_vu **ra, dk_dich_vu *dich_vu, const cb_thiet_lap *thiet_lap);
+esp_err_t sensor_task_start(sensor_task_t **out, control_service_t *service, const sensor_task_config *setup);

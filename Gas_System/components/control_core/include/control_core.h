@@ -1,111 +1,119 @@
-#ifndef LOI_DIEU_KHIEN_H
-#define LOI_DIEU_KHIEN_H
+#ifndef CONTROL_CORE_H
+#define CONTROL_CORE_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
 /* C thuần: bên gọi cung cấp thời gian mili giây tăng đơn điệu và sở hữu trạng thái.
  * Chỉ gọi từ một tác vụ. Kiểm tra giao thức/chống lệnh lặp nằm ngoài lõi. */
+/* Chế độ quyết định ai được phép điều khiển relay. */
 typedef enum {
-    DK_TU_DONG,
-    DK_THU_CONG
-} dk_che_do;
+    CONTROL_MODE_AUTO,
+    CONTROL_MODE_MANUAL
+} control_mode;
+
+/* Tình trạng dữ liệu MQ-2, dùng để chặn Auto khi chưa an toàn. */
+typedef enum {
+    SENSOR_WARMING_UP,
+    SENSOR_READY,
+    SENSOR_ERROR
+} sensor_status;
+
+/* Tiến trình chỉnh ngưỡng chung giữa nút cứng và web. */
+typedef enum {
+    EDIT_IDLE,
+    EDIT_ACTIVE,
+    EDIT_SAVING
+} edit_status;
 
 typedef enum {
-    DK_DANG_ON_DINH,
-    DK_SAN_SANG,
-    DK_LOI_CAM_BIEN
-} dk_tinh_trang_cam_bien;
+    CONTROL_EVENT_CHECK_TIMEOUTS,
+    CONTROL_EVENT_NEW_SAMPLE,
+    CONTROL_EVENT_SET_MODE,
+    CONTROL_EVENT_SET_RELAY,
+    CONTROL_EVENT_BEGIN_EDIT,
+    CONTROL_EVENT_SET_DRAFT,
+    CONTROL_EVENT_SAVE_DRAFT,
+    CONTROL_EVENT_SAVE_OK,
+    CONTROL_EVENT_SAVE_FAILED
+} control_event_type;
 
 typedef enum {
-    DK_KHONG_CHINH,
-    DK_DANG_CHINH,
-    DK_DANG_LUU
-} dk_trang_thai_chinh;
+    CONTROL_OK,
+    CONTROL_INVALID,
+    CONTROL_TIME_ERROR,
+    CONTROL_WRONG_MODE,
+    CONTROL_BUSY,
+    CONTROL_STALE,
+    CONTROL_NO_EDIT_SESSION,
+    CONTROL_STORAGE_ERROR,
+    CONTROL_ID_EXHAUSTED
+} control_result_code;
 
-typedef enum {
-    DK_KIEM_TRA_THOI_GIAN,
-    DK_MAU_MOI,
-    DK_DAT_CHE_DO,
-    DK_DAT_RELAY,
-    DK_BAT_DAU_CHINH,
-    DK_DAT_BAN_NHAP,
-    DK_YEU_CAU_LUU,
-    DK_LUU_THANH_CONG,
-    DK_LUU_THAT_BAI
-} dk_loai_su_kien;
-
-typedef enum {
-    DK_THANH_CONG,
-    DK_KHONG_HOP_LE,
-    DK_LOI_THOI_GIAN,
-    DK_SAI_CHE_DO,
-    DK_DANG_BAN,
-    DK_DU_LIEU_CU,
-    DK_KHONG_CO_PHIEN_CHINH,
-    DK_LOI_LUU_TRU,
-    DK_HET_MA_DINH_DANH
-} dk_ma_ket_qua;
-
+/* Các giá trị chính sách được main truyền vào một lần khi khởi động. */
 typedef struct {
-    uint64_t thoi_gian_on_dinh_ms, han_du_lieu_ms, han_chinh_ms, han_luu_ms;
-    uint32_t so_mau_can_thiet;
-    int nguong_nho_nhat, nguong_lon_nhat, do_tre_nguong, nguong_nhap_ban_dau;
-} dk_cau_hinh;
+    uint64_t warmup_time_ms, data_timeout_ms, edit_timeout_ms, save_timeout_ms;
+    uint32_t required_sample_count;
+    int minimum_threshold, maximum_threshold, threshold_hysteresis, initial_draft_threshold;
+} control_config;
 
+/* Một thông điệp gửi tới lõi điều khiển. Không task nào sửa state trực tiếp. */
 typedef struct {
-    dk_loai_su_kien loai;
-    uint64_t ma_khoi_dong;              /* Sự kiện phải thuộc lần khởi động này. */
-    uint64_t so_thu_tu, luc_lay_mau_ms; /* Thời điểm lấy mẫu, không phải lúc nhận. */
-    bool hop_le;                        /* Đọc và kiểm tra chất lượng mẫu thành công. */
-    int gia_tri;                        /* Mẫu thô, bản nháp, chế độ hoặc relay 0/1. */
-    uint64_t ma_phien_chinh, phien_ban_mong_doi, ma_lan_luu;
-} dk_su_kien;
+    control_event_type type;
+    uint64_t boot_id;              /* Sự kiện phải thuộc lần khởi động này. */
+    uint64_t sequence, sample_time_ms; /* Thời điểm lấy mẫu, không phải lúc nhận. */
+    bool is_valid;                        /* Đọc và kiểm tra chất lượng mẫu thành công. */
+    int value;                        /* Mẫu thô, bản nháp, chế độ hoặc relay 0/1. */
+    uint64_t edit_session_id, expected_revision, save_id;
+} control_event;
 
+/* Toàn bộ trạng thái sống; chỉ control_task được thay đổi cấu trúc này. */
 typedef struct {
-    bool da_khoi_tao;
-    dk_cau_hinh cau_hinh;
-    uint64_t ma_khoi_dong, luc_khoi_dong_ms, hien_tai_ms;
-    dk_che_do che_do;
-    dk_tinh_trang_cam_bien tinh_trang_cam_bien;
-    dk_trang_thai_chinh trang_thai_chinh;
-    bool relay_bat, cau_hinh_hop_le, da_co_mau;
-    int nguong, mau, ban_nhap;
-    uint32_t so_mau_lien_tiep;
-    uint64_t thu_tu_mau, luc_lay_mau_ms;
-    uint64_t ma_phien_chinh, phien_ban_nhap, luc_thao_tac_chinh_ms;
-    uint64_t ma_lan_luu, luc_bat_dau_luu_ms;
-    bool chua_ro_ket_qua_luu;
-} dk_trang_thai;
+    bool initialized;
+    control_config config;
+    uint64_t boot_id, boot_time_ms, current_time_ms;
+    control_mode mode;
+    sensor_status sensor_status;
+    edit_status edit_status;
+    bool relay_on, configuration_valid, has_sample;
+    int threshold, sample, draft;
+    uint32_t consecutive_sample_count;
+    uint64_t sample_sequence, sample_time_ms;
+    uint64_t edit_session_id, draft_revision, last_edit_time_ms;
+    uint64_t save_id, save_start_time_ms;
+    bool save_result_unknown;
+} control_state;
 
 /* Mỗi lần xử lý trả bản ghi có cấu trúc, kể cả khi từ chối lệnh.
  * Tác vụ điều phối phải ghi nhật ký và gửi yêu cầu lưu đúng một lần. */
 typedef struct {
-    dk_ma_ket_qua ma_ket_qua;
-    uint64_t thoi_diem_ms;
-    dk_loai_su_kien su_kien;
-    bool relay_thay_doi, relay_bat;
-    bool can_luu;
-    int nguong_can_luu;
-    uint64_t ma_lan_luu;
-    dk_che_do che_do;
-    dk_tinh_trang_cam_bien tinh_trang_cam_bien;
-    dk_trang_thai_chinh trang_thai_chinh;
-    bool chua_ro_ket_qua_luu;
-} dk_ket_qua;
+    control_result_code result_code;
+    uint64_t event_time_ms;
+    control_event_type event;
+    bool relay_changed, relay_on;
+    bool needs_save;
+    int threshold_to_save;
+    uint64_t save_id;
+    control_mode mode;
+    sensor_status sensor_status;
+    edit_status edit_status;
+    bool save_result_unknown;
+} control_result;
 
-dk_ma_ket_qua dk_khoi_tao(dk_trang_thai *trang_thai,
-    const dk_cau_hinh *cau_hinh,
-    uint64_t ma_khoi_dong,
-    uint64_t hien_tai_ms,
-    bool du_lieu_luu_hop_le,
-    int nguong_da_luu);
-dk_ma_ket_qua dk_xu_ly_su_kien(dk_trang_thai *trang_thai,
-    const dk_su_kien *su_kien,
-    uint64_t hien_tai_ms,
-    dk_ket_qua *ket_qua);
+/* Khởi tạo state ở Auto, relay tắt và cảm biến đang warm-up. */
+control_result_code control_initialize(control_state *state,
+    const control_config *config,
+    uint64_t boot_id,
+    uint64_t current_time_ms,
+    bool saved_data_valid,
+    int saved_threshold);
+/* Áp dụng đúng một event và trả về các side effect cần thực hiện bên ngoài lõi. */
+control_result_code control_process_event(control_state *state,
+    const control_event *event,
+    uint64_t current_time_ms,
+    control_result *result_event);
 
 /* UINT64_MAX: không có hạn chờ hoặc hạn vượt miền biểu diễn. */
-uint64_t dk_han_ke_tiep(const dk_trang_thai *trang_thai);
+uint64_t control_next_deadline(const control_state *state);
 
 #endif

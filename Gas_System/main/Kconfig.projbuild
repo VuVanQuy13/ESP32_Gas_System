@@ -1,13 +1,5 @@
 menu "Gas_System"
-menu "Che do chay, MQ-2 va LCD"
-    config DK_THU_NGHIEM
-        bool "Chay du lieu gia, khong xuat GPIO"
-        default y
-        help
-            Gia lap ADC va relay, khong cau hinh GPIO. Co chu ky mau thap/cao/loi.
-            Tat de dung nut, relay, ADC va LCD I2C that. Web dung duoc o ca hai che do.
-            Ca hai che do deu dung NVS that.
-            Auto khong bat relay khi chua co du lieu cam bien/cau hinh da luu.
+menu "MQ-2 va LCD"
     config MQ2_ON_DINH_GIAY
         int "Thoi gian on dinh MQ-2 that (0 = chua xac dinh)"
         range 0 604800

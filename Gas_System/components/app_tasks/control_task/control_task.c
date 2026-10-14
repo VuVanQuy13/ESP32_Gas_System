@@ -1,4 +1,4 @@
-#include "control_task.h"
+﻿#include "control_task.h"
 
 #include <inttypes.h>
 #include <stdlib.h>
@@ -9,270 +9,270 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 
-#define SO_CHO_LENH 16
+#define COMMAND_QUEUE_LENGTH 16
 #define NGAN_XEP_BYTE 4096
 #define UU_TIEN 5
 #define CHO_TOI_DA_MS 100
 
-static const char *NHAN = "dieu_khien";
+static const char *TAG = "dieu_khien";
 
-static void kiem_tra_noi_bo(BaseType_t ket_qua)
+static void check_internal(BaseType_t result_event)
 {
-    if (ket_qua != pdPASS) {
-        ESP_LOGE(NHAN, "su_kien=vi_pham_bat_bien_hang_doi");
+    if (result_event != pdPASS) {
+        ESP_LOGE(TAG, "su_kien=vi_pham_bat_bien_hang_doi");
         abort();
     }
 }
 
 typedef struct {
-    uint64_t ma_lenh;
-    dk_su_kien su_kien;
-    bool la_nut;
-    dk_nut nut;
-    bool tu_web;
-    uint64_t luc_nhan, phien_dieu_khien;
-} dk_goi_tin;
+    uint64_t command_id;
+    control_event event;
+    bool is_button;
+    button_action button;
+    bool from_web;
+    uint64_t received_time_ms, control_revision;
+} control_packet;
 
-struct dk_dich_vu {
-    dk_trang_thai trang_thai;
-    dk_thiet_lap_tac_vu thiet_lap;
-    QueueHandle_t dau_vao, phan_hoi, lcd, web, viec_luu, ket_qua_luu;
-    SemaphoreHandle_t cho_phan_hoi;
-    TaskHandle_t tac_vu;
-    uint64_t phien_ban;
-    uint64_t phien_dieu_khien;
-    esp_err_t loi_dau_ra;
-    bool loi_luu;
+struct control_service {
+    control_state state;
+    control_task_config setup;
+    QueueHandle_t input_queue, response, lcd, web, storage_jobs, storage_results;
+    SemaphoreHandle_t response_slots;
+    TaskHandle_t task_handle;
+    uint64_t revision;
+    uint64_t control_revision;
+    esp_err_t output_error;
+    bool storage_error;
 };
 
-static uint64_t lay_ms(void)
+static uint64_t get_time_ms(void)
 {
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
-static void phat_ban_chup(dk_dich_vu *d)
+static void phat_ban_chup(control_service_t *service)
 {
-    dk_ban_chup ban = {
-        .phien_ban = ++d->phien_ban,
-        .trang_thai = d->trang_thai,
-        .loi_dau_ra = d->loi_dau_ra,
-        .loi_luu = d->loi_luu,
-        .phien_dieu_khien = d->phien_dieu_khien
+    control_snapshot stored_value = {
+        .revision = ++service->revision,
+        .state = service->state,
+        .output_error = service->output_error,
+        .storage_error = service->storage_error,
+        .control_revision = service->control_revision
     };
 
     /* Queue có đúng một phần tử: luôn giữ bản mới nhất. */
-    kiem_tra_noi_bo(xQueueOverwrite(d->lcd, &ban));
-    kiem_tra_noi_bo(xQueueOverwrite(d->web, &ban));
+    check_internal(xQueueOverwrite(service->lcd, &stored_value));
+    check_internal(xQueueOverwrite(service->web, &stored_value));
 }
 
 /* -1: chua du dieu kien so sanh, 0: duoi nguong, 1: cham/vuot nguong. */
-static int muc_canh_bao(const dk_trang_thai *s)
+static int get_alarm_level(const control_state *state)
 {
-    if (!s->cau_hinh_hop_le || !s->da_co_mau || s->tinh_trang_cam_bien != DK_SAN_SANG)
+    if (!state->configuration_valid || !state->has_sample || state->sensor_status != SENSOR_READY)
         return -1;
-    return s->mau >= s->nguong;
+    return state->sample >= state->threshold;
 }
 
-static dk_ket_qua xu_ly(dk_dich_vu *d, const dk_su_kien *su_kien, uint64_t ma_lenh)
+static control_result process(control_service_t *service, const control_event *event, uint64_t command_id)
 {
-    dk_ket_qua k;
-    int canh_bao_cu = muc_canh_bao(&d->trang_thai);
-    dk_che_do che_do_cu = d->trang_thai.che_do;
-    bool relay_cu = d->trang_thai.relay_bat;
-    dk_tinh_trang_cam_bien cam_bien_cu = d->trang_thai.tinh_trang_cam_bien;
-    dk_trang_thai_chinh chinh_cu = d->trang_thai.trang_thai_chinh;
-    bool luu_chua_ro_cu = d->trang_thai.chua_ro_ket_qua_luu;
-    dk_ma_ket_qua ma = dk_xu_ly_su_kien(&d->trang_thai, su_kien, lay_ms(), &k);
+    control_result result;
+    int previous_alarm = get_alarm_level(&service->state);
+    control_mode previous_mode = service->state.mode;
+    bool previous_relay = service->state.relay_on;
+    sensor_status previous_sensor = service->state.sensor_status;
+    edit_status previous_edit = service->state.edit_status;
+    bool previous_save_unknown = service->state.save_result_unknown;
+    control_result_code code = control_process_event(&service->state, event, get_time_ms(), &result);
 
     /* Timeout có thể đổi đầu ra kể cả khi lệnh bị từ chối. */
-    if (k.relay_thay_doi || d->loi_dau_ra != ESP_OK) {
-        d->loi_dau_ra = d->thiet_lap.xuat_relay(k.relay_bat, d->thiet_lap.ngu_canh);
-        if (d->loi_dau_ra != ESP_OK)
-            ESP_LOGE(NHAN, "su_kien=loi_gpio ma=%d muc=%d", d->loi_dau_ra, k.relay_bat);
+    if (result.relay_changed || service->output_error != ESP_OK) {
+        service->output_error = service->setup.set_relay(result.relay_on, service->setup.context);
+        if (service->output_error != ESP_OK)
+            ESP_LOGE(TAG, "su_kien=loi_gpio ma=%d muc=%d", service->output_error, result.relay_on);
     }
 
-    if (k.relay_thay_doi && d->loi_dau_ra == ESP_OK)
-        ESP_LOGI(NHAN,
+    if (result.relay_changed && service->output_error == ESP_OK)
+        ESP_LOGI(TAG,
             "su_kien=xuat_relay yeu_cau=%s che_do=%s",
-            k.relay_bat ? "BAT" : "TAT",
-            k.che_do == DK_TU_DONG ? "AUTO" : "MANUAL");
-    if (k.can_luu) {
-        dk_viec_luu viec = { d->trang_thai.ma_khoi_dong, k.ma_lan_luu, k.nguong_can_luu };
-        if (xQueueSend(d->viec_luu, &viec, 0) != pdPASS) {
+            result.relay_on ? "BAT" : "TAT",
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
+    if (result.needs_save) {
+        storage_job job = { service->state.boot_id, result.save_id, result.threshold_to_save };
+        if (xQueueSend(service->storage_jobs, &job, 0) != pdPASS) {
             /* Chưa giao storage nên biết chắc yêu cầu mới chưa được ghi. */
-            ESP_LOGE(NHAN, "su_kien=hang_luu_day id=%" PRIu64, k.ma_lan_luu);
-            dk_su_kien loi = {
-                .loai = DK_LUU_THAT_BAI,
-                .ma_khoi_dong = d->trang_thai.ma_khoi_dong,
-                .ma_lan_luu = k.ma_lan_luu
+            ESP_LOGE(TAG, "su_kien=hang_luu_day id=%" PRIu64, result.save_id);
+            control_event error = {
+                .type = CONTROL_EVENT_SAVE_FAILED,
+                .boot_id = service->state.boot_id,
+                .save_id = result.save_id
             };
-            (void)dk_xu_ly_su_kien(&d->trang_thai, &loi, lay_ms(), &k);
-            k.su_kien = su_kien->loai;
-            ma = k.ma_ket_qua;
+            (void)control_process_event(&service->state, &error, get_time_ms(), &result);
+            result.event = event->type;
+            code = result.result_code;
         }
     }
 
-    if (che_do_cu != d->trang_thai.che_do || relay_cu != d->trang_thai.relay_bat) {
-        if (d->phien_dieu_khien == UINT64_MAX) {
-            ESP_LOGE(NHAN, "su_kien=het_phien_dieu_khien");
+    if (previous_mode != service->state.mode || previous_relay != service->state.relay_on) {
+        if (service->control_revision == UINT64_MAX) {
+            ESP_LOGE(TAG, "su_kien=het_phien_dieu_khien");
             abort();
         }
-        ++d->phien_dieu_khien;
+        ++service->control_revision;
     }
 
-    if (ma == DK_LOI_LUU_TRU)
-        d->loi_luu = true;
-    else if (ma == DK_THANH_CONG &&
-             (su_kien->loai == DK_BAT_DAU_CHINH || su_kien->loai == DK_YEU_CAU_LUU ||
-                 su_kien->loai == DK_LUU_THANH_CONG))
-        d->loi_luu = false;
-    int canh_bao_moi = muc_canh_bao(&d->trang_thai);
-    if (canh_bao_cu != canh_bao_moi)
-        ESP_LOGI(NHAN,
+    if (code == CONTROL_STORAGE_ERROR)
+        service->storage_error = true;
+    else if (code == CONTROL_OK &&
+             (event->type == CONTROL_EVENT_BEGIN_EDIT || event->type == CONTROL_EVENT_SAVE_DRAFT ||
+                 event->type == CONTROL_EVENT_SAVE_OK))
+        service->storage_error = false;
+    int current_alarm = get_alarm_level(&service->state);
+    if (previous_alarm != current_alarm)
+        ESP_LOGI(TAG,
             "su_kien=canh_bao trang_thai=%s mau=%d nguong=%d",
-            canh_bao_moi < 0 ? "CHUA_DU_DIEU_KIEN"
-            : canh_bao_moi   ? "VUOT_NGUONG"
+            current_alarm < 0 ? "CHUA_DU_DIEU_KIEN"
+            : current_alarm   ? "VUOT_NGUONG"
                              : "DUOI_NGUONG",
-            d->trang_thai.mau,
-            d->trang_thai.nguong);
-    if ((su_kien->loai != DK_KIEM_TRA_THOI_GIAN && su_kien->loai != DK_MAU_MOI) ||
-        k.relay_thay_doi || cam_bien_cu != k.tinh_trang_cam_bien ||
-        chinh_cu != k.trang_thai_chinh || luu_chua_ro_cu != k.chua_ro_ket_qua_luu) {
-        ESP_LOGI(NHAN,
+            service->state.sample,
+            service->state.threshold);
+    if ((event->type != CONTROL_EVENT_CHECK_TIMEOUTS && event->type != CONTROL_EVENT_NEW_SAMPLE) ||
+        result.relay_changed || previous_sensor != result.sensor_status ||
+        previous_edit != result.edit_status || previous_save_unknown != result.save_result_unknown) {
+        ESP_LOGI(TAG,
             "lenh=%" PRIu64
             " su_kien=%d ket_qua=%d che_do=%s cam_bien=%s relay=%s loi_dau_ra=%d chinh=%s "
             "luu_chua_ro=%d nguong=%d ban_nhap=%d cau_hinh_hop_le=%d",
-            ma_lenh,
-            su_kien->loai,
-            ma,
-            k.che_do == DK_TU_DONG ? "AUTO" : "MANUAL",
-            k.tinh_trang_cam_bien == DK_SAN_SANG       ? "SAN_SANG"
-            : k.tinh_trang_cam_bien == DK_LOI_CAM_BIEN ? "LOI"
+            command_id,
+            event->type,
+            code,
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL",
+            result.sensor_status == SENSOR_READY       ? "SAN_SANG"
+            : result.sensor_status == SENSOR_ERROR ? "LOI"
                                                        : "DANG_ON_DINH",
-            k.relay_bat ? "BAT" : "TAT",
-            d->loi_dau_ra,
-            k.trang_thai_chinh == DK_KHONG_CHINH  ? "KHONG_CHINH"
-            : k.trang_thai_chinh == DK_DANG_CHINH ? "DANG_CHINH"
+            result.relay_on ? "BAT" : "TAT",
+            service->output_error,
+            result.edit_status == EDIT_IDLE  ? "KHONG_CHINH"
+            : result.edit_status == EDIT_ACTIVE ? "DANG_CHINH"
                                                   : "DANG_LUU",
-            k.chua_ro_ket_qua_luu,
-            d->trang_thai.nguong,
-            d->trang_thai.ban_nhap,
-            d->trang_thai.cau_hinh_hop_le);
+            result.save_result_unknown,
+            service->state.threshold,
+            service->state.draft,
+            service->state.configuration_valid);
     }
 
-    return k;
+    return result;
 }
 
-static dk_su_kien dich_nut(const dk_trang_thai *s, dk_nut nut)
+static control_event translate_button(const control_state *state, button_action button)
 {
-    dk_su_kien e = {
-        .ma_khoi_dong = s->ma_khoi_dong,
-        .ma_phien_chinh = s->ma_phien_chinh,
-        .phien_ban_mong_doi = s->phien_ban_nhap
+    control_event enable = {
+        .boot_id = state->boot_id,
+        .edit_session_id = state->edit_session_id,
+        .expected_revision = state->draft_revision
     };
-    if (nut == DK_NUT_CHE_DO) {
-        e.loai = DK_DAT_CHE_DO;
-        e.gia_tri = s->che_do == DK_TU_DONG ? DK_THU_CONG : DK_TU_DONG;
-    } else if (nut == DK_NUT_CHINH_LUU) {
-        e.loai = s->trang_thai_chinh == DK_KHONG_CHINH ? DK_BAT_DAU_CHINH : DK_YEU_CAU_LUU;
-    } else if (s->trang_thai_chinh != DK_KHONG_CHINH) {
-        e.loai = DK_DAT_BAN_NHAP;
+    if (button == BUTTON_ACTION_TOGGLE_MODE) {
+        enable.type = CONTROL_EVENT_SET_MODE;
+        enable.value = state->mode == CONTROL_MODE_AUTO ? CONTROL_MODE_MANUAL : CONTROL_MODE_AUTO;
+    } else if (button == BUTTON_ACTION_EDIT_SAVE) {
+        enable.type = state->edit_status == EDIT_IDLE ? CONTROL_EVENT_BEGIN_EDIT : CONTROL_EVENT_SAVE_DRAFT;
+    } else if (state->edit_status != EDIT_IDLE) {
+        enable.type = CONTROL_EVENT_SET_DRAFT;
 
         /* Bước 10 đơn vị thử nghiệm; chặn ở biên, tránh tràn số int. */
-        int64_t moi = (int64_t)s->ban_nhap + (nut == DK_NUT_BAT_TANG ? 10 : -10);
-        if (moi > s->cau_hinh.nguong_lon_nhat)
-            moi = s->cau_hinh.nguong_lon_nhat;
-        if (moi < s->cau_hinh.nguong_nho_nhat)
-            moi = s->cau_hinh.nguong_nho_nhat;
-        e.gia_tri = (int)moi;
+        int64_t moi = (int64_t)state->draft + (button == BUTTON_ACTION_ON_INCREMENT ? 10 : -10);
+        if (moi > state->config.maximum_threshold)
+            moi = state->config.maximum_threshold;
+        if (moi < state->config.minimum_threshold)
+            moi = state->config.minimum_threshold;
+        enable.value = (int)moi;
     } else {
-        e.loai = DK_DAT_RELAY;
-        e.gia_tri = nut == DK_NUT_BAT_TANG;
+        enable.type = CONTROL_EVENT_SET_RELAY;
+        enable.value = button == BUTTON_ACTION_ON_INCREMENT;
     }
 
-    return e;
+    return enable;
 }
 
-esp_err_t dk_gui_nut(dk_dich_vu *d, dk_nut nut)
+esp_err_t control_send_button(control_service_t *service, button_action button)
 {
-    if (!d || nut < DK_NUT_BAT_TANG || nut > DK_NUT_CHINH_LUU)
+    if (!service || button < BUTTON_ACTION_ON_INCREMENT || button > BUTTON_ACTION_EDIT_SAVE)
         return ESP_ERR_INVALID_ARG;
-    dk_goi_tin goi = {
-        .la_nut = true,
-        .nut = nut
+    control_packet packet = {
+        .is_button = true,
+        .button = button
     };
-    if (xQueueSend(d->dau_vao, &goi, 0) != pdPASS) {
-        ESP_LOGW(NHAN, "su_kien=bo_nut_hang_day nut=%d", nut);
+    if (xQueueSend(service->input_queue, &packet, 0) != pdPASS) {
+        ESP_LOGW(TAG, "su_kien=bo_nut_hang_day nut=%d", button);
         return ESP_ERR_TIMEOUT;
     }
-    xTaskNotifyGive(d->tac_vu);
+    xTaskNotifyGive(service->task_handle);
     return ESP_OK;
 }
 
-static bool dk_chay_mot_luot(dk_dich_vu *d)
+static bool control_run_once(control_service_t *service)
 {
-    if (d == NULL)
+    if (service == NULL)
         return false;
 
     /* Mỗi lượt hữu hạn: kiểm tra thời gian, một kết quả lưu, một đầu vào.
      * Flood lệnh không được làm mất bước kiểm tra timeout. */
-    dk_su_kien tick = {
-        .loai = DK_KIEM_TRA_THOI_GIAN,
-        .ma_khoi_dong = d->trang_thai.ma_khoi_dong
+    control_event tick = {
+        .type = CONTROL_EVENT_CHECK_TIMEOUTS,
+        .boot_id = service->state.boot_id
     };
-    (void)xu_ly(d, &tick, 0);
+    (void)process(service, &tick, 0);
     bool co_viec = false;
-    dk_su_kien luu;
-    if (xQueueReceive(d->ket_qua_luu, &luu, 0) == pdPASS) {
-        (void)xu_ly(d, &luu, 0);
+    control_event storage;
+    if (xQueueReceive(service->storage_results, &storage, 0) == pdPASS) {
+        (void)process(service, &storage, 0);
         co_viec = true;
     }
-    dk_goi_tin goi;
-    if (xQueueReceive(d->dau_vao, &goi, 0) == pdPASS) {
-        if (goi.la_nut)
-            goi.su_kien = dich_nut(&d->trang_thai, goi.nut);
-        dk_phan_hoi phan = {
-            .ma_lenh = goi.ma_lenh
+    control_packet packet;
+    if (xQueueReceive(service->input_queue, &packet, 0) == pdPASS) {
+        if (packet.is_button)
+            packet.event = translate_button(&service->state, packet.button);
+        control_response part = {
+            .command_id = packet.command_id
         };
-        bool doi_dau_ra = goi.su_kien.loai == DK_DAT_CHE_DO || goi.su_kien.loai == DK_DAT_RELAY;
-        uint64_t now = lay_ms();
-        if (goi.tu_web && (now < goi.luc_nhan || now - goi.luc_nhan >= 1000 ||
-                              (doi_dau_ra && goi.phien_dieu_khien != d->phien_dieu_khien))) {
-            phan.ket_qua = xu_ly(d, &tick, goi.ma_lenh);
-            phan.ket_qua.su_kien = goi.su_kien.loai;
-            phan.ket_qua.ma_ket_qua = DK_DU_LIEU_CU;
-            ESP_LOGW(NHAN, "su_kien=tu_choi_lenh_web_cu lenh=%" PRIu64, goi.ma_lenh);
+        bool doi_dau_ra = packet.event.type == CONTROL_EVENT_SET_MODE || packet.event.type == CONTROL_EVENT_SET_RELAY;
+        uint64_t now = get_time_ms();
+        if (packet.from_web && (now < packet.received_time_ms || now - packet.received_time_ms >= 1000 ||
+                              (doi_dau_ra && packet.control_revision != service->control_revision))) {
+            part.result_event = process(service, &tick, packet.command_id);
+            part.result_event.event = packet.event.type;
+            part.result_event.result_code = CONTROL_STALE;
+            ESP_LOGW(TAG, "su_kien=tu_choi_lenh_web_cu lenh=%" PRIu64, packet.command_id);
         } else
-            phan.ket_qua = xu_ly(d, &goi.su_kien, goi.ma_lenh);
-        if (goi.tu_web)
-            ESP_LOGI(NHAN,
+            part.result_event = process(service, &packet.event, packet.command_id);
+        if (packet.from_web)
+            ESP_LOGI(TAG,
                 "nguon=web lenh=%" PRIu64 " su_kien=%d ket_qua=%d",
-                goi.ma_lenh,
-                goi.su_kien.loai,
-                phan.ket_qua.ma_ket_qua);
-        if (goi.la_nut)
-            ESP_LOGI(NHAN,
+                packet.command_id,
+                packet.event.type,
+                part.result_event.result_code);
+        if (packet.is_button)
+            ESP_LOGI(TAG,
                 "nguon=nut nut=%d ket_qua=%d ban_nhap=%d nguong=%d",
-                goi.nut,
-                phan.ket_qua.ma_ket_qua,
-                d->trang_thai.ban_nhap,
-                d->trang_thai.nguong);
-        phan.loi_dau_ra = d->loi_dau_ra;
-        if (goi.ma_lenh != 0) {
+                packet.button,
+                part.result_event.result_code,
+                service->state.draft,
+                service->state.threshold);
+        part.output_error = service->output_error;
+        if (packet.command_id != 0) {
             /* Producer đã giữ một chỗ trước khi nhận lệnh. */
-            kiem_tra_noi_bo(xQueueSend(d->phan_hoi, &phan, 0));
+            check_internal(xQueueSend(service->response, &part, 0));
         }
         co_viec = true;
     }
-    phat_ban_chup(d);
+    phat_ban_chup(service);
     return co_viec;
 }
 
-static TickType_t dk_so_tick_cho(const dk_dich_vu *d)
+static TickType_t control_wait_ticks(const control_service_t *service)
 {
-    uint64_t hien_tai = lay_ms();
-    uint64_t han = dk_han_ke_tiep(&d->trang_thai);
-    uint64_t cho_ms = han <= hien_tai ? 0 : han - hien_tai;
+    uint64_t now_ms = get_time_ms();
+    uint64_t deadline = control_next_deadline(&service->state);
+    uint64_t cho_ms = deadline <= now_ms ? 0 : deadline - now_ms;
     if (cho_ms > CHO_TOI_DA_MS)
         cho_ms = CHO_TOI_DA_MS;
 
@@ -280,168 +280,172 @@ static TickType_t dk_so_tick_cho(const dk_dich_vu *d)
     return (TickType_t)((cho_ms * configTICK_RATE_HZ + 999) / 1000);
 }
 
-static void vong_lap(void *tham_so)
+static void display_task_loop(void *parameters)
 {
-    dk_dich_vu *d = tham_so;
+    control_service_t *service = parameters;
     for (;;) {
-        if (dk_chay_mot_luot(d)) {
+        if (control_run_once(service)) {
             /* Nhường CPU một tick khi có tải liên tục, tránh làm đói idle. */
             vTaskDelay(1);
         } else {
-            (void)ulTaskNotifyTake(pdTRUE, dk_so_tick_cho(d));
+            (void)ulTaskNotifyTake(pdTRUE, control_wait_ticks(service));
         }
     }
 }
 
-static void don_khoi_tao_loi(dk_dich_vu *d)
+static void cleanup_init_error(control_service_t *service)
 {
-    QueueHandle_t hang[] = { d->dau_vao, d->phan_hoi, d->lcd, d->web, d->viec_luu, d->ket_qua_luu };
-    for (unsigned i = 0; i < sizeof(hang) / sizeof(hang[0]); ++i)
-        if (hang[i] != NULL)
-            vQueueDelete(hang[i]);
-    if (d->cho_phan_hoi != NULL)
-        vSemaphoreDelete(d->cho_phan_hoi);
-    free(d);
+    QueueHandle_t queue[] = { service->input_queue, service->response, service->lcd, service->web, service->storage_jobs, service->storage_results };
+    for (unsigned i = 0; i < sizeof(queue) / sizeof(queue[0]); ++i)
+        if (queue[i] != NULL)
+            vQueueDelete(queue[i]);
+    if (service->response_slots != NULL)
+        vSemaphoreDelete(service->response_slots);
+    free(service);
 }
 
-esp_err_t dk_bat_dau(dk_dich_vu **ra, const dk_thiet_lap_tac_vu *c)
+esp_err_t control_task_start(control_service_t **out, const control_task_config *config)
 {
-    if (ra == NULL || c == NULL || c->xuat_relay == NULL)
+    if (out == NULL || config == NULL || config->set_relay == NULL)
         return ESP_ERR_INVALID_ARG;
-    *ra = NULL;
-    dk_dich_vu *d = calloc(1, sizeof(*d));
-    if (d == NULL)
+
+    *out = NULL;
+    control_service_t *service = calloc(1, sizeof(*service));
+    if (service == NULL)
         return ESP_ERR_NO_MEM;
-    d->thiet_lap = *c;
-    d->phien_dieu_khien = 1;
-    if (dk_khoi_tao(&d->trang_thai,
-            &c->loi,
-            c->ma_khoi_dong,
-            lay_ms(),
-            c->du_lieu_luu_hop_le,
-            c->nguong_da_luu) != DK_THANH_CONG) {
-        free(d);
+    service->setup = *config;
+    service->control_revision = 1;
+
+    if (control_initialize(&service->state,
+            &config->policy,
+            config->boot_id,
+            get_time_ms(),
+            config->saved_data_valid,
+            config->saved_threshold) != CONTROL_OK) {
+        free(service);
         return ESP_ERR_INVALID_ARG;
     }
-    d->dau_vao = xQueueCreate(SO_CHO_LENH, sizeof(dk_goi_tin));
-    d->phan_hoi = xQueueCreate(SO_CHO_LENH, sizeof(dk_phan_hoi));
-    d->lcd = xQueueCreate(1, sizeof(dk_ban_chup));
-    d->web = xQueueCreate(1, sizeof(dk_ban_chup));
-    d->viec_luu = xQueueCreate(1, sizeof(dk_viec_luu));
-    d->ket_qua_luu = xQueueCreate(1, sizeof(dk_su_kien));
-    d->cho_phan_hoi = xSemaphoreCreateCounting(SO_CHO_LENH, SO_CHO_LENH);
-    if (!d->dau_vao || !d->phan_hoi || !d->lcd || !d->web || !d->viec_luu || !d->ket_qua_luu ||
-        !d->cho_phan_hoi) {
-        don_khoi_tao_loi(d);
+
+    service->input_queue = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(control_packet));
+    service->response = xQueueCreate(COMMAND_QUEUE_LENGTH, sizeof(control_response));
+    service->lcd = xQueueCreate(1, sizeof(control_snapshot));
+    service->web = xQueueCreate(1, sizeof(control_snapshot));
+    service->storage_jobs = xQueueCreate(1, sizeof(storage_job));
+    service->storage_results = xQueueCreate(1, sizeof(control_event));
+    service->response_slots = xSemaphoreCreateCounting(COMMAND_QUEUE_LENGTH, COMMAND_QUEUE_LENGTH);
+    if (!service->input_queue || !service->response || !service->lcd || !service->web || !service->storage_jobs || !service->storage_results ||
+        !service->response_slots) {
+        cleanup_init_error(service);
         return ESP_ERR_NO_MEM;
     }
-    esp_err_t loi = c->xuat_relay(false, c->ngu_canh);
-    if (loi != ESP_OK) {
-        don_khoi_tao_loi(d);
-        return loi;
+    
+    esp_err_t error = config->set_relay(false, config->context);
+    if (error != ESP_OK) {
+        cleanup_init_error(service);
+        return error;
     }
-    ESP_LOGI(NHAN,
+    ESP_LOGI(TAG,
         "su_kien=khoi_dong che_do=AUTO relay=TAT cam_bien=DANG_ON_DINH nguong=%d "
         "cau_hinh_hop_le=%d",
-        d->trang_thai.nguong,
-        d->trang_thai.cau_hinh_hop_le);
-    phat_ban_chup(d);
-    if (xTaskCreate(vong_lap, "dieu_khien", NGAN_XEP_BYTE, d, UU_TIEN, &d->tac_vu) != pdPASS) {
-        don_khoi_tao_loi(d);
+        service->state.threshold,
+        service->state.configuration_valid);
+    phat_ban_chup(service);
+    if (xTaskCreate(display_task_loop, "dieu_khien", NGAN_XEP_BYTE, service, UU_TIEN, &service->task_handle) != pdPASS) {
+        cleanup_init_error(service);
         return ESP_ERR_NO_MEM;
     }
-    *ra = d;
+    *out = service;
     return ESP_OK;
 }
 
-static esp_err_t gui_lenh(dk_dich_vu *d, uint64_t id, const dk_su_kien *e, bool web, uint64_t phien)
+static esp_err_t send_command(control_service_t *service, uint64_t id, const control_event *enable, bool web, uint64_t revision)
 {
-    if (d == NULL || e == NULL || id == 0 || e->loai < DK_DAT_CHE_DO || e->loai > DK_YEU_CAU_LUU)
+    if (service == NULL || enable == NULL || id == 0 || enable->type < CONTROL_EVENT_SET_MODE || enable->type > CONTROL_EVENT_SAVE_DRAFT)
         return ESP_ERR_INVALID_ARG;
-    if (xSemaphoreTake(d->cho_phan_hoi, 0) != pdPASS) {
-        ESP_LOGW(NHAN, "su_kien=het_cho_phan_hoi lenh=%" PRIu64, id);
+    if (xSemaphoreTake(service->response_slots, 0) != pdPASS) {
+        ESP_LOGW(TAG, "su_kien=het_cho_phan_hoi lenh=%" PRIu64, id);
         return ESP_ERR_TIMEOUT;
     }
-    dk_goi_tin goi = {
-        .ma_lenh = id,
-        .su_kien = *e,
-        .tu_web = web,
-        .luc_nhan = lay_ms(),
-        .phien_dieu_khien = phien
+    control_packet packet = {
+        .command_id = id,
+        .event = *enable,
+        .from_web = web,
+        .received_time_ms = get_time_ms(),
+        .control_revision = revision
     };
-    if (xQueueSend(d->dau_vao, &goi, 0) != pdPASS) {
-        kiem_tra_noi_bo(xSemaphoreGive(d->cho_phan_hoi));
-        ESP_LOGW(NHAN, "su_kien=hang_dau_vao_day lenh=%" PRIu64, id);
+    if (xQueueSend(service->input_queue, &packet, 0) != pdPASS) {
+        check_internal(xSemaphoreGive(service->response_slots));
+        ESP_LOGW(TAG, "su_kien=hang_dau_vao_day lenh=%" PRIu64, id);
         return ESP_ERR_TIMEOUT;
     }
-    xTaskNotifyGive(d->tac_vu);
+    xTaskNotifyGive(service->task_handle);
     return ESP_OK;
 }
 
-esp_err_t dk_gui_lenh(dk_dich_vu *d, uint64_t id, const dk_su_kien *e)
+esp_err_t control_send_command(control_service_t *service, uint64_t id, const control_event *enable)
 {
-    return gui_lenh(d, id, e, false, 0);
+    return send_command(service, id, enable, false, 0);
 }
 
-esp_err_t dk_gui_lenh_web(dk_dich_vu *d, uint64_t id, const dk_su_kien *e, uint64_t phien)
+esp_err_t control_send_web_command(control_service_t *service, uint64_t id, const control_event *enable, uint64_t revision)
 {
-    return gui_lenh(d, id, e, true, phien);
+    return send_command(service, id, enable, true, revision);
 }
 
-esp_err_t dk_gui_mau(dk_dich_vu *d, const dk_su_kien *e)
+esp_err_t control_send_sample(control_service_t *service, const control_event *enable)
 {
-    if (d == NULL || e == NULL || e->loai != DK_MAU_MOI)
+    if (service == NULL || enable == NULL || enable->type != CONTROL_EVENT_NEW_SAMPLE)
         return ESP_ERR_INVALID_ARG;
-    dk_goi_tin goi = {
-        .su_kien = *e
+    control_packet packet = {
+        .event = *enable
     };
-    if (xQueueSend(d->dau_vao, &goi, 0) != pdPASS) {
-        ESP_LOGW(NHAN, "su_kien=mat_mau thu_tu=%" PRIu64, e->so_thu_tu);
+    if (xQueueSend(service->input_queue, &packet, 0) != pdPASS) {
+        ESP_LOGW(TAG, "su_kien=mat_mau thu_tu=%" PRIu64, enable->sequence);
         return ESP_ERR_TIMEOUT;
     }
-    xTaskNotifyGive(d->tac_vu);
+    xTaskNotifyGive(service->task_handle);
     return ESP_OK;
 }
 
-esp_err_t dk_doc_phan_hoi(dk_dich_vu *d, dk_phan_hoi *p)
+esp_err_t control_read_response(control_service_t *service, control_response *session)
 {
-    if (!d || !p)
+    if (!service || !session)
         return ESP_ERR_INVALID_ARG;
-    if (xQueueReceive(d->phan_hoi, p, 0) != pdPASS)
+    if (xQueueReceive(service->response, session, 0) != pdPASS)
         return ESP_ERR_NOT_FOUND;
-    kiem_tra_noi_bo(xSemaphoreGive(d->cho_phan_hoi));
+    check_internal(xSemaphoreGive(service->response_slots));
     return ESP_OK;
 }
 
-esp_err_t dk_doc_lcd(dk_dich_vu *d, dk_ban_chup *b)
+esp_err_t control_read_lcd_snapshot(control_service_t *service, control_snapshot *snapshot)
 {
-    if (!d || !b)
+    if (!service || !snapshot)
         return ESP_ERR_INVALID_ARG;
-    return xQueuePeek(d->lcd, b, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
+    return xQueuePeek(service->lcd, snapshot, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t dk_doc_web(dk_dich_vu *d, dk_ban_chup *b)
+esp_err_t control_read_web_snapshot(control_service_t *service, control_snapshot *snapshot)
 {
-    if (!d || !b)
+    if (!service || !snapshot)
         return ESP_ERR_INVALID_ARG;
-    return xQueuePeek(d->web, b, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
+    return xQueuePeek(service->web, snapshot, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t dk_nhan_viec_luu(dk_dich_vu *d, dk_viec_luu *v)
+esp_err_t control_take_storage_job(control_service_t *service, storage_job *v)
 {
-    if (!d || !v)
+    if (!service || !v)
         return ESP_ERR_INVALID_ARG;
-    return xQueueReceive(d->viec_luu, v, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
+    return xQueueReceive(service->storage_jobs, v, 0) == pdPASS ? ESP_OK : ESP_ERR_NOT_FOUND;
 }
 
-esp_err_t dk_bao_ket_qua_luu(dk_dich_vu *d, const dk_su_kien *e)
+esp_err_t control_report_storage_result(control_service_t *service, const control_event *enable)
 {
-    if (!d || !e || (e->loai != DK_LUU_THANH_CONG && e->loai != DK_LUU_THAT_BAI))
+    if (!service || !enable || (enable->type != CONTROL_EVENT_SAVE_OK && enable->type != CONTROL_EVENT_SAVE_FAILED))
         return ESP_ERR_INVALID_ARG;
-    if (xQueueSend(d->ket_qua_luu, e, 0) != pdPASS) {
-        ESP_LOGW(NHAN, "su_kien=hang_ket_qua_luu_day id=%" PRIu64, e->ma_lan_luu);
+    if (xQueueSend(service->storage_results, enable, 0) != pdPASS) {
+        ESP_LOGW(TAG, "su_kien=hang_ket_qua_luu_day id=%" PRIu64, enable->save_id);
         return ESP_ERR_TIMEOUT; /* Storage giữ kết quả và thử lại, không bỏ. */
     }
-    xTaskNotifyGive(d->tac_vu);
+    xTaskNotifyGive(service->task_handle);
     return ESP_OK;
 }

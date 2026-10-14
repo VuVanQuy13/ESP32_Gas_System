@@ -1,19 +1,20 @@
-#include "buttons.h"
+﻿#include "buttons.h"
 #include "board_pins.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include "driver/gpio.h"
-static bool da_khoi_tao;
-static const gpio_num_t chan[] = { CONFIG_GAS_GPIO_NUT_BAT,
+static bool initialized;
+static const gpio_num_t pins[] = { 
+    CONFIG_GAS_GPIO_NUT_BAT,
     CONFIG_GAS_GPIO_NUT_TAT,
     CONFIG_GAS_GPIO_NUT_CHE_DO,
     CONFIG_GAS_GPIO_NUT_CHINH };
 
-esp_err_t nut_khoi_tao(void)
+esp_err_t button_initialize(void)
 {
-    if (da_khoi_tao)
+    if (initialized)
         return ESP_ERR_INVALID_STATE;
-    const gpio_config_t c = {
+    const gpio_config_t config = {
         .pin_bit_mask = (1ULL << CONFIG_GAS_GPIO_NUT_BAT) |
                                               (1ULL << CONFIG_GAS_GPIO_NUT_TAT) |
                                               (1ULL << CONFIG_GAS_GPIO_NUT_CHE_DO) |
@@ -23,21 +24,21 @@ esp_err_t nut_khoi_tao(void)
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
         .intr_type = GPIO_INTR_DISABLE
     };
-    esp_err_t loi = gpio_config(&c);
-    if (loi == ESP_OK)
-        da_khoi_tao = true;
-    return loi;
+    esp_err_t error = gpio_config(&config);
+    if (error == ESP_OK)
+        initialized = true;
+    return error;
 }
 
-esp_err_t nut_doc(uint8_t *mat_na)
+esp_err_t button_read(uint8_t *mask)
 {
-    if (mat_na == NULL)
+    if (mask == NULL)
         return ESP_ERR_INVALID_ARG;
-    if (!da_khoi_tao)
+    if (!initialized)
         return ESP_ERR_INVALID_STATE;
-    *mat_na = 0;
+    *mask = 0;
     for (unsigned i = 0; i < 4; ++i)
-        if (gpio_get_level(chan[i]) == 0)
-            *mat_na |= (uint8_t)(1U << i);
+        if (gpio_get_level(pins[i]) == 0)
+            *mask |= (uint8_t)(1U << i);
     return ESP_OK;
 }

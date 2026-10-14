@@ -1,4 +1,4 @@
-#include "storage.h"
+﻿#include "storage.h"
 #include <stdint.h>
 #include <stddef.h>
 #include "nvs.h"
@@ -7,66 +7,68 @@
  * Không lưu struct C để tránh phụ thuộc padding. NVS cung cấp CRC nội bộ. */
 #define DINH_DANG (UINT64_C(0x4D510001) << 32)
 
-esp_err_t luu_khoi_tao(luu_kho *k, int nho, int lon)
+esp_err_t storage_initialize(storage_store *result, int minimum, int maximum)
 {
-    if (!k || nho < 0 || lon < nho)
+    if (!result || minimum < 0 || maximum < minimum)
         return ESP_ERR_INVALID_ARG;
-    if (k->da_thiet_lap)
+    if (result->configured)
         return ESP_ERR_INVALID_STATE;
-    k->da_thiet_lap = true;
-    k->nho_nhat = nho;
-    k->lon_nhat = lon;
-    k->loi_khoi_tao = nvs_flash_init();
-    return k->loi_khoi_tao;
+    result->configured = true;
+    result->nho_nhat = minimum;
+    result->lon_nhat = maximum;
+    result->init_error = nvs_flash_init();
+    return result->init_error;
 }
 
-static esp_err_t kiem_tra(const luu_kho *k)
+static esp_err_t kiem_tra(const storage_store *result)
 {
-    if (!k)
+    if (!result)
         return ESP_ERR_INVALID_ARG;
-    if (!k->da_thiet_lap)
+    if (!result->configured)
         return ESP_ERR_INVALID_STATE;
-    return k->loi_khoi_tao;
+    return result->init_error;
 }
 
-esp_err_t luu_doc(const luu_kho *k, int *nguong)
+esp_err_t storage_read(const storage_store *result, int *threshold)
 {
-    if (!nguong)
+    if (!threshold)
         return ESP_ERR_INVALID_ARG;
-    esp_err_t loi = kiem_tra(k);
-    if (loi != ESP_OK)
-        return loi;
-    nvs_handle_t h;
-    loi = nvs_open("gas_cfg", NVS_READONLY, &h);
-    if (loi != ESP_OK)
-        return loi;
-    uint64_t ban = 0;
-    loi = nvs_get_u64(h, "nguong_v1", &ban);
-    nvs_close(h);
-    if (loi != ESP_OK)
-        return loi;
-    uint32_t gia_tri = (uint32_t)ban;
-    if ((ban & UINT64_C(0xFFFFFFFF00000000)) != DINH_DANG || gia_tri < (uint32_t)k->nho_nhat ||
-        gia_tri > (uint32_t)k->lon_nhat)
+
+    esp_err_t error = kiem_tra(result);
+    if (error != ESP_OK)
+        return error;
+    
+    nvs_handle_t handle;
+    error = nvs_open("gas_cfg", NVS_READONLY, &handle);
+    if (error != ESP_OK)
+        return error;
+    uint64_t stored_value = 0;
+    error = nvs_get_u64(handle, "nguong_v1", &stored_value);
+    nvs_close(handle);
+    if (error != ESP_OK)
+        return error;
+    uint32_t value = (uint32_t)stored_value;
+    if ((stored_value & UINT64_C(0xFFFFFFFF00000000)) != DINH_DANG || value < (uint32_t)result->nho_nhat ||
+        value > (uint32_t)result->lon_nhat)
         return ESP_ERR_INVALID_STATE;
-    *nguong = (int)gia_tri;
+    *threshold = (int)value;
     return ESP_OK;
 }
 
-esp_err_t luu_ghi(const luu_kho *k, int nguong)
+esp_err_t storage_write(const storage_store *result, int threshold)
 {
-    esp_err_t loi = kiem_tra(k);
-    if (loi != ESP_OK)
-        return loi;
-    if (nguong < k->nho_nhat || nguong > k->lon_nhat)
+    esp_err_t error = kiem_tra(result);
+    if (error != ESP_OK)
+        return error;
+    if (threshold < result->nho_nhat || threshold > result->lon_nhat)
         return ESP_ERR_INVALID_ARG;
-    nvs_handle_t h;
-    loi = nvs_open("gas_cfg", NVS_READWRITE, &h);
-    if (loi != ESP_OK)
-        return loi;
-    loi = nvs_set_u64(h, "nguong_v1", DINH_DANG | (uint32_t)nguong);
-    if (loi == ESP_OK)
-        loi = nvs_commit(h);
-    nvs_close(h);
-    return loi;
+    nvs_handle_t handle;
+    error = nvs_open("gas_cfg", NVS_READWRITE, &handle);
+    if (error != ESP_OK)
+        return error;
+    error = nvs_set_u64(handle, "nguong_v1", DINH_DANG | (uint32_t)threshold);
+    if (error == ESP_OK)
+        error = nvs_commit(handle);
+    nvs_close(handle);
+    return error;
 }
