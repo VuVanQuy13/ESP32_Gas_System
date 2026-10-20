@@ -5464,6 +5464,45 @@
                 "id": "gas_system-wi-fi",
                 "title": "Wi-Fi",
                 "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [
+                            {
+                                "children": [],
+                                "depends_on": "GAS_TELEGRAM_ENABLED",
+                                "help": "Token do BotFather cap. Gia tri duoc luu dang chu thuong trong sdkconfig cuc bo.\nKhong chia se sdkconfig va khong dua token vao log.",
+                                "id": "GAS_TELEGRAM_BOT_TOKEN",
+                                "name": "GAS_TELEGRAM_BOT_TOKEN",
+                                "range": null,
+                                "title": "Bot token",
+                                "type": "string"
+                            },
+                            {
+                                "children": [],
+                                "depends_on": "GAS_TELEGRAM_ENABLED",
+                                "help": "Chat ID cua tai khoan hoac nhom nhan tin Telegram.",
+                                "id": "GAS_TELEGRAM_CHAT_ID",
+                                "name": "GAS_TELEGRAM_CHAT_ID",
+                                "range": null,
+                                "title": "Chat ID nhan tin",
+                                "type": "string"
+                            }
+                        ],
+                        "depends_on": null,
+                        "help": "Mac dinh tat. Bat muc nay khi da co Bot token va Chat ID.\nTu bat CA bundle de xac minh chung chi HTTPS cua Telegram.",
+                        "id": "GAS_TELEGRAM_ENABLED",
+                        "name": "GAS_TELEGRAM_ENABLED",
+                        "range": null,
+                        "title": "Bat thong bao Telegram",
+                        "type": "bool"
+                    }
+                ],
+                "depends_on": null,
+                "id": "gas_system-telegram-bot",
+                "title": "Telegram Bot",
+                "type": "menu"
             }
         ],
         "depends_on": null,

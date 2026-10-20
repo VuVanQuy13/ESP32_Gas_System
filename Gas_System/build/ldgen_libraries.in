@@ -162,10 +162,12 @@ $<TARGET_FILE:__idf_json>
 $<TARGET_FILE:idf::control_core>
 $<TARGET_FILE:idf::drivers>
 $<TARGET_FILE:idf::storage>
+$<TARGET_FILE:idf::telegram_notify>
 $<TARGET_FILE:idf::app_tasks>
 $<TARGET_FILE:__idf_control_core>
 $<TARGET_FILE:__idf_drivers>
 $<TARGET_FILE:__idf_storage>
+$<TARGET_FILE:__idf_telegram_notify>
 $<TARGET_FILE:idf::web_service>
 $<TARGET_FILE:__idf_app_tasks>
 $<TARGET_FILE:idf::network>

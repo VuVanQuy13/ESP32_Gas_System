@@ -8,3 +8,5 @@
 /config/sdkconfig.board.old
 /build/
 /.cache/
+/sdkconfig
+/sdkconfig.old

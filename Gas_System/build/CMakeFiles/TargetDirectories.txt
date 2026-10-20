@@ -866,6 +866,13 @@ D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/storage/CMakeFile
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/storage/CMakeFiles/install.dir
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/storage/CMakeFiles/install/local.dir
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/storage/CMakeFiles/install/strip.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/__idf_telegram_notify.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/edit_cache.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/rebuild_cache.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/list_install_components.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/install.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/install/local.dir
+D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/CMakeFiles/install/strip.dir
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/app_tasks/CMakeFiles/__idf_app_tasks.dir
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/app_tasks/CMakeFiles/edit_cache.dir
 D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/app_tasks/CMakeFiles/rebuild_cache.dir

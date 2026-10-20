@@ -8,6 +8,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "telegram_notify.h"
 
 #define COMMAND_QUEUE_LENGTH 16
 #define NGAN_XEP_BYTE 4096
@@ -73,6 +74,35 @@ static int get_alarm_level(const control_state *state)
     return state->sample >= state->threshold;
 }
 
+static void submit_telegram_notification(
+    control_service_t *service,
+    const control_result *result)
+{
+    if (!service->setup.telegram_notifications_ready ||
+        result->notification == CONTROL_NOTIFICATION_NONE) {
+        return;
+    }
+
+    telegram_notify_event notification_event = {
+        .adc_value = result->notification_sample,
+        .threshold = result->notification_threshold,
+    };
+
+    if (result->notification == CONTROL_NOTIFICATION_GAS_ALARM) {
+        notification_event.type = TELEGRAM_NOTIFY_EVENT_ALARM;
+    } else if (result->notification == CONTROL_NOTIFICATION_GAS_RECOVERY) {
+        notification_event.type = TELEGRAM_NOTIFY_EVENT_RECOVERY;
+    } else {
+        ESP_LOGE(TAG, "su_kien=telegram_handoff ket_qua=bo_qua ly_do=loai_su_kien_khong_hop_le");
+        return;
+    }
+
+    const esp_err_t error = telegram_notify_submit(&notification_event);
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "su_kien=telegram_handoff ket_qua=bo_qua loi=%d", error);
+    }
+}
+
 static control_result process(control_service_t *service, const control_event *event, uint64_t command_id)
 {
     control_result result;
@@ -83,6 +113,20 @@ static control_result process(control_service_t *service, const control_event *e
     edit_status previous_edit = service->state.edit_status;
     bool previous_save_unknown = service->state.save_result_unknown;
     control_result_code code = control_process_event(&service->state, event, get_time_ms(), &result);
+
+    if (result.notification == CONTROL_NOTIFICATION_GAS_ALARM) {
+        ESP_LOGW(TAG,
+            "su_kien=chinh_sach_canh_bao chuyen=VUOT_NGUONG adc=%d nguong=%d che_do=%s",
+            result.notification_sample,
+            result.notification_threshold,
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
+    } else if (result.notification == CONTROL_NOTIFICATION_GAS_RECOVERY) {
+        ESP_LOGI(TAG,
+            "su_kien=chinh_sach_canh_bao chuyen=ON_DINH adc=%d nguong=%d che_do=%s",
+            result.notification_sample,
+            result.notification_threshold,
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
+    }
 
     /* Timeout có thể đổi đầu ra kể cả khi lệnh bị từ chối. */
     if (result.relay_changed || service->output_error != ESP_OK) {
@@ -159,6 +203,8 @@ static control_result process(control_service_t *service, const control_event *e
             service->state.draft,
             service->state.configuration_valid);
     }
+
+    submit_telegram_notification(service, &result);
 
     return result;
 }

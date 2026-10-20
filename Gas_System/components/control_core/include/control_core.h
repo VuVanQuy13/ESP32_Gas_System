@@ -50,6 +50,13 @@ typedef enum {
     CONTROL_ID_EXHAUSTED
 } control_result_code;
 
+/* Su kien can bao do control_task xu ly; core chi quyet dinh chinh sach. */
+typedef enum {
+    CONTROL_NOTIFICATION_NONE,
+    CONTROL_NOTIFICATION_GAS_ALARM,
+    CONTROL_NOTIFICATION_GAS_RECOVERY
+} control_notification_type;
+
 /* Các giá trị chính sách được main truyền vào một lần khi khởi động. */
 typedef struct {
     uint64_t warmup_time_ms, data_timeout_ms, edit_timeout_ms, save_timeout_ms;
@@ -78,6 +85,8 @@ typedef struct {
     bool relay_on, configuration_valid, has_sample;
     int threshold, sample, draft;
     uint32_t consecutive_sample_count;
+    bool gas_alarm_active; /* Da phat canh bao, chua xac nhan du dieu kien hoi phuc. */
+    uint32_t consecutive_recovery_sample_count; /* So mau hop le lien tiep duoi ranh gioi hoi phuc. */
     uint64_t sample_sequence, sample_time_ms;
     uint64_t edit_session_id, draft_revision, last_edit_time_ms;
     uint64_t save_id, save_start_time_ms;
@@ -94,6 +103,8 @@ typedef struct {
     bool needs_save;
     int threshold_to_save;
     uint64_t save_id;
+    control_notification_type notification; /* Chuyen trang thai de task phat log/gui Telegram. */
+    int notification_sample, notification_threshold;
     control_mode mode;
     sensor_status sensor_status;
     edit_status edit_status;

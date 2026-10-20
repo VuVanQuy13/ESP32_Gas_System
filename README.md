@@ -68,7 +68,7 @@ Các dịch vụ ESP-IDF đi cùng nhưng không phải chân ngoại vi nối t
 
 5. Serial monitor chạy ở 115200 baud. Sau khi ESP32 kết nối Wi-Fi, tìm log `url=http://...` rồi mở địa chỉ đó trên thiết bị cùng mạng.
 
-Hướng dẫn chi tiết: [đổi GPIO](docs/gpio-menuconfig.md), [bản đồ source](docs/codebase-map.md), [core điều khiển](docs/code-walkthrough.md), [task điều khiển và queue](docs/control-task-guide.md), [nút và relay](docs/button-task-guide.md), [ADC/MQ-2](docs/sensor-guide.md), [LCD](docs/display-guide.md), [NVS](docs/storage-guide.md), [Wi-Fi/web](docs/web-guide.md).
+Hướng dẫn chi tiết: [đổi GPIO](docs/gpio-menuconfig.md), [cấu hình và kiểm tra Telegram Bot](docs/telegram-guide.md), [bản đồ source](docs/codebase-map.md), [core điều khiển](docs/code-walkthrough.md), [task điều khiển và queue](docs/control-task-guide.md), [nút và relay](docs/button-task-guide.md), [ADC/MQ-2](docs/sensor-guide.md), [LCD](docs/display-guide.md), [NVS](docs/storage-guide.md), [Wi-Fi/web](docs/web-guide.md).
 
 ## Kiểm thử
 

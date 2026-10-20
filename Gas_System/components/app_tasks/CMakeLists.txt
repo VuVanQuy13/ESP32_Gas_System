@@ -18,4 +18,5 @@ idf_component_register(
         esp_timer
         freertos
         log
+        telegram_notify
 )

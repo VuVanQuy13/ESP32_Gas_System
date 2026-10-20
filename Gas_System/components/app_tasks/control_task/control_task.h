@@ -43,6 +43,7 @@ typedef struct {
     uint64_t boot_id;
     bool saved_data_valid;
     int saved_threshold;
+    bool telegram_notifications_ready;
 
     /* Callback phải ngắn, không chờ mạng/LCD/flash. Không gọi lại API dịch vụ.
      * Được gọi OFF lúc khởi tạo, sau đó chỉ từ control_task.

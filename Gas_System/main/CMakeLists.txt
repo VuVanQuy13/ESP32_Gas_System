@@ -7,5 +7,6 @@ idf_component_register(
         app_tasks
         web_service
         network
+        telegram_notify
         esp_hw_support
 )

@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <string.h>
 
+#define GAS_RECOVERY_REQUIRED_SAMPLES 3U
+
 static bool threshold_is_valid(const control_config *parameters, int value)
 {
     return value >= parameters->minimum_threshold && value <= parameters->maximum_threshold;
@@ -60,10 +62,69 @@ static void evaluate_auto_mode(control_state *state, bool just_entered)
     }
 }
 
+static void set_notification(
+    control_result *result,
+    control_notification_type notification,
+    const control_state *state)
+{
+    result->notification = notification;
+    result->notification_sample = state->sample;
+    result->notification_threshold = state->threshold;
+}
+
+/* Cap nhat chot canh bao chi tu mau moi da hop le va Ready. */
+static void evaluate_gas_alarm(control_state *state, control_result *result)
+{
+    if (!state->configuration_valid || !state->has_sample ||
+        state->sensor_status != SENSOR_READY) {
+        state->consecutive_recovery_sample_count = 0;
+        return;
+    }
+
+    if (!state->gas_alarm_active) {
+        state->consecutive_recovery_sample_count = 0;
+        if (state->sample >= state->threshold) {
+            state->gas_alarm_active = true;
+            set_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
+        }
+        return;
+    }
+
+    const int recovery_threshold = state->threshold - state->config.threshold_hysteresis;
+    if (state->sample > recovery_threshold) {
+        state->consecutive_recovery_sample_count = 0;
+        return;
+    }
+
+    if (state->consecutive_recovery_sample_count < GAS_RECOVERY_REQUIRED_SAMPLES) {
+        ++state->consecutive_recovery_sample_count;
+    }
+
+    if (state->consecutive_recovery_sample_count == GAS_RECOVERY_REQUIRED_SAMPLES) {
+        state->gas_alarm_active = false;
+        state->consecutive_recovery_sample_count = 0;
+        set_notification(result, CONTROL_NOTIFICATION_GAS_RECOVERY, state);
+    }
+}
+
+/* Nguong moi da duoc luu: mau Ready hien tai co the kich hoat canh bao moi. */
+static void evaluate_saved_threshold(control_state *state, control_result *result)
+{
+    state->consecutive_recovery_sample_count = 0;
+
+    if (state->configuration_valid && state->has_sample &&
+        state->sensor_status == SENSOR_READY && !state->gas_alarm_active &&
+        state->sample >= state->threshold) {
+        state->gas_alarm_active = true;
+        set_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
+    }
+}
+
 static void mark_sensor_error(control_state *state)
 {
     state->sensor_status = SENSOR_ERROR;
     state->consecutive_sample_count = 0;
+    state->consecutive_recovery_sample_count = 0;
     evaluate_auto_mode(state, false);
 }
 
@@ -90,7 +151,10 @@ static void check_timeouts(control_state *state)
     }
 }
 
-static control_result_code accept_sample(control_state *state, const control_event *event)
+static control_result_code accept_sample(
+    control_state *state,
+    const control_event *event,
+    control_result *result_event)
 {
     if (event->sequence == 0 || event->sequence <= state->sample_sequence ||
         event->sample_time_ms < state->boot_time_ms ||
@@ -125,6 +189,7 @@ static control_result_code accept_sample(control_state *state, const control_eve
     }
     evaluate_auto_mode(
         state, !was_ready && state->sensor_status == SENSOR_READY);
+    evaluate_gas_alarm(state, result_event);
     return CONTROL_OK;
 }
 
@@ -158,7 +223,7 @@ static control_result_code apply_event(
     case CONTROL_EVENT_CHECK_TIMEOUTS:
         return CONTROL_OK;
     case CONTROL_EVENT_NEW_SAMPLE:
-        return accept_sample(state, event);
+        return accept_sample(state, event, result_event);
     case CONTROL_EVENT_SET_MODE:
         if (event->value != CONTROL_MODE_AUTO && event->value != CONTROL_MODE_MANUAL)
             return CONTROL_INVALID;
@@ -236,6 +301,7 @@ static control_result_code apply_event(
         state->edit_status = EDIT_IDLE;
         state->draft = 0;
         evaluate_auto_mode(state, false);
+        evaluate_saved_threshold(state, result_event);
         return CONTROL_OK;
     default:
         return CONTROL_INVALID;

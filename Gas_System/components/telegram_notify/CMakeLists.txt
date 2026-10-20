@@ -1,0 +1,15 @@
+idf_component_register(
+    SRCS
+        "telegram_notify.c"
+        "telegram_notify_format.c"
+    INCLUDE_DIRS
+        "include"
+    PRIV_INCLUDE_DIRS
+        "."
+    REQUIRES
+        esp_http_client
+        json
+        mbedtls
+        freertos
+        log
+)

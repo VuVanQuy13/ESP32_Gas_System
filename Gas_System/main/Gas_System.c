@@ -13,6 +13,7 @@
 #include "esp_random.h"
 #include "network.h"
 #include "web_service.h"
+#include "telegram_notify.h"
 
 static const char *TAG = "ung_dung";
 
@@ -92,6 +93,18 @@ void app_main(void)
         ESP_LOGW(TAG, "su_kien=can_cau_hinh loi_nvs=%d", storage_error);
     else
         ESP_LOGI(TAG, "su_kien=khoi_phuc_nguong nguong=%d", setup.saved_threshold);
+
+#if CONFIG_GAS_TELEGRAM_ENABLED
+    esp_err_t telegram_error = telegram_notify_start();
+    setup.telegram_notifications_ready = telegram_error == ESP_OK;
+    if (telegram_error == ESP_OK)
+        ESP_LOGI(TAG, "su_kien=telegram_worker ket_qua=san_sang");
+    else
+        ESP_LOGW(TAG, "su_kien=telegram_worker ket_qua=khong_san_sang loi=%d", telegram_error);
+#else
+    setup.telegram_notifications_ready = false;
+    ESP_LOGI(TAG, "su_kien=telegram_worker ket_qua=tat_trong_menuconfig");
+#endif
 
     control_service_t *service = NULL;
     ESP_ERROR_CHECK(control_task_start(&service, &setup));

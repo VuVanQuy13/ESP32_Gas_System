@@ -101,4 +101,30 @@ menu "Wi-Fi"
             Mang WPA/WPA2 ca nhan: 8..63 byte. Khong commit sdkconfig chua mat khau.
             wifi_local.h neu co se duoc uu tien.
 endmenu
+
+menu "Telegram Bot"
+    config GAS_TELEGRAM_ENABLED
+        bool "Bat thong bao Telegram"
+        default n
+        select MBEDTLS_CERTIFICATE_BUNDLE
+        help
+            Mac dinh tat. Bat muc nay khi da co Bot token va Chat ID.
+            Tu bat CA bundle de xac minh chung chi HTTPS cua Telegram.
+
+    config GAS_TELEGRAM_BOT_TOKEN
+        string "Bot token"
+        depends on GAS_TELEGRAM_ENABLED
+        default ""
+        help
+            Token do BotFather cap. Gia tri duoc luu dang chu thuong trong sdkconfig cuc bo.
+            Khong chia se sdkconfig va khong dua token vao log.
+
+    config GAS_TELEGRAM_CHAT_ID
+        string "Chat ID nhan tin"
+        depends on GAS_TELEGRAM_ENABLED
+        default ""
+        help
+            Chat ID cua tai khoan hoac nhom nhan tin Telegram.
+endmenu
+
 endmenu

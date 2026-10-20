@@ -1,5 +1,20 @@
 # Codebase map
 
+## Telegram bot notification integration (2026-10-17)
+
+- Current source boundary: `main/Gas_System.c` starts the control service and later starts `network_start()` and `web_start()`. `components/app_tasks/control_task/control_task.c` serializes button, web and sensor events. `components/control_core/control_core.c` owns the pure state machine and Auto relay hysteresis. Wi-Fi `IP_EVENT_STA_GOT_IP` only confirms a local IP address, not Telegram reachability.
+- Completed parts 1 and 2: local `sdkconfig` files are ignored/untracked while `sdkconfig.defaults` keeps non-secret defaults; the Kconfig menu provides Telegram enable/token/chat ID. Secrets are not printed; a compiled bot token remains extractable from firmware.
+- Completed part 3: `components/telegram_notify` provides `telegram_notify_start()` and nonblocking `telegram_notify_submit()`. Its single worker performs one HTTPS POST using ESP-IDF certificate verification, checks HTTP status and Telegram JSON `ok`, then drops the event. A one-event gate drops submissions while an event is queued or sending. Logs contain event kind/raw ADC/threshold/result, not token, chat ID, URL or request body. Native message-format tests previously passed, but their source was removed at the user's request on 2026-10-19. `main/CMakeLists.txt` links the component, and enabling Telegram selects the TLS certificate bundle.
+- Part 4 complete: `components/control_core` tracks a latched gas alarm and emits `CONTROL_NOTIFICATION_GAS_ALARM` / `CONTROL_NOTIFICATION_GAS_RECOVERY` in `control_result`, independent of Auto/Manual and relay output. Recovery requires three valid samples <= threshold - hysteresis; invalid/above-boundary readings reset progress. Draft threshold edits do not affect policy.
+- Part 5 complete: `main/Gas_System.c` starts the Telegram worker when enabled and records success in `control_task_config.telegram_notifications_ready`. `control_task.c` maps core transition values into `telegram_notify_event` and invokes `telegram_notify_submit()`, which is nonblocking. If Telegram is disabled, startup credentials are invalid, the queue is busy, or delivery fails, the notification is skipped/dropped according to the existing single-attempt policy; relay/control processing continues.
+- Runtime flow: MQ-2 sample -> control owner detects alarm/recovery -> nonblocking submit -> notification worker attempts one HTTPS request -> result log. Busy, offline, transport, HTTP, API or queue-admission failures are dropped without retry/deferred replay. Physical-board Wi-Fi and actual Bot API delivery remain unverified.
+- Requirements: alert on valid reading >= effective threshold; recovery after 3 consecutive valid readings <= effective threshold - 50 ADC; reset recovery count on invalid/above-boundary readings; do not Telegram-notify sensor faults. Draft threshold edits do not affect alerts until saved; a committed threshold change may raise an alarm if the current ready sample exceeds the new threshold. Recovery debounce still requires three new valid readings. Message labels the measurement as raw ADC, and the bot recipient must start/contact the bot first.
+
+## Telegram setup guide
+
+- `docs/telegram-guide.md` documents configuration and deployment. It matches the current chat ID validator: numeric private IDs and negative numeric group IDs are accepted; channel usernames such as `@name` are not.
+- The standalone Telegram-format and control-core notification test source files were removed on 2026-10-19; component CMake source lists never included them, so firmware composition is unchanged. Automated regression checks for these cases are no longer available in the tree.
+
 ## Opaque handle type aliases (2026-10-13)
 
 - `control_task.h` declares `typedef struct control_service control_service_t;`; `struct control_service` is the tag, and `control_service_t` is a typedef alias for the same struct type. Callers use `control_service_t *` for a pointer; the struct body remains private to `control_task.c`.
