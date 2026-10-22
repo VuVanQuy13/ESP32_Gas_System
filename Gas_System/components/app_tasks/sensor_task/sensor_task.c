@@ -1,4 +1,4 @@
-﻿#include "sensor_task.h"
+#include "sensor_task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "flame_d0.h"
@@ -150,9 +150,14 @@ static void sensor_task_loop(void *parameters)
             abort();
         }
 
-        /* Chờ sau mỗi lần đọc, không đọc dồn để bù các chu kỳ đã bỏ lỡ. */
-        TickType_t delays = pdMS_TO_TICKS(worker->setup.period_ms);
-        vTaskDelay(delays > 0 ? delays : 1);
+        /* Khong co interrupt: doc dinh ky. Co canh D0: thuc day som, cho 30 ms
+         * de D0 on dinh, sau do vong lap doc lai D0 va gui event binh thuong. */
+        TickType_t wait_ticks = pdMS_TO_TICKS(worker->setup.period_ms);
+        uint32_t interrupt_count = ulTaskNotifyTake(pdTRUE, wait_ticks > 0 ? wait_ticks : 1);
+        if (interrupt_count > 0) {
+            TickType_t debounce_ticks = pdMS_TO_TICKS(30);
+            vTaskDelay(debounce_ticks > 0 ? debounce_ticks : 1);
+        }
     }
 }
 
@@ -177,6 +182,14 @@ esp_err_t sensor_task_start(sensor_task_t **out, control_service_t *service, con
     if (xTaskCreate(sensor_task_loop, "cam_bien", 3072, worker, 4, &worker->task_handle) != pdPASS) {
         free(worker);
         return ESP_ERR_NO_MEM;
+    }
+    if (worker->setup.monitor_flame) {
+        error = flame_d0_enable_interrupts(worker->task_handle);
+        if (error != ESP_OK) {
+            vTaskDelete(worker->task_handle);
+            free(worker);
+            return error;
+        }
     }
     *out = worker;
     return ESP_OK;

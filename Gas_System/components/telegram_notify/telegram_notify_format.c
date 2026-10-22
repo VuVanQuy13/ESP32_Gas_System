@@ -50,7 +50,7 @@ int telegram_notify_format_message(
 
     if (event->transitions & TELEGRAM_NOTIFY_GAS_ALARM) {
         int written = snprintf(
-            line, sizeof(line), "CANH BAO KHI GAS: ADC tho=%d, nguong=%d.",
+            line, sizeof(line), "CANH BAO KHI GAS: ppm=%d, nguong=%d.",
             event->adc_value, event->threshold);
         if (written < 0 || (size_t)written >= sizeof(line) ||
             !append_line(output, output_size, &length, line))
@@ -59,7 +59,7 @@ int telegram_notify_format_message(
 
     if (event->transitions & TELEGRAM_NOTIFY_GAS_RECOVERY) {
         int written = snprintf(
-            line, sizeof(line), "KHI GAS ON DINH: ADC tho=%d, nguong=%d.",
+            line, sizeof(line), "KHI GAS ON DINH: ppm=%d, nguong=%d.",
             event->adc_value, event->threshold);
         if (written < 0 || (size_t)written >= sizeof(line) ||
             !append_line(output, output_size, &length, line))

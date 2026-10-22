@@ -366,3 +366,16 @@ Planning and context documentation were added; no firmware changes or tests were
 - If gas and flame notification transitions are produced by the same control processing event, combine them into one Telegram message. D0 transition is immediate at the existing sampling rate; no consecutive-sample debounce.
 - Add one menuconfig hysteresis setting in raw ADC counts, default 50 and proposed valid range 1..100 (bounded by current minimum gas threshold 100). The shared value controls Auto gas relay OFF boundary and gas Telegram recovery boundary; flame D0 uses no ADC hysteresis.
 - No firmware code has been changed for Telegram flame notifications or menuconfig hysteresis. User has approved the requirements/plan choices, but has not yet instructed implementation to begin.
+
+## GPIO interrupt direction (2026-10-22)
+
+- User selected staged option C: first add GPIO interrupt handling for the four active-low buttons, preserving task-level 30 ms debounce and existing control-task ownership; after that is verified, add a separate D0 flame GPIO interrupt implementation.
+- MQ-2 AO remains periodic ADC sampling. Relay, LCD, web and Telegram must never execute in a GPIO ISR. ISR scope is limited to wake/queue notification using ISR-safe FreeRTOS APIs; the receiving task validates the physical signal then forwards the normal event to control_task.
+- No source implementation is authorized by this decision alone; discussion/plan stage continues until the user requests code.
+
+## GPIO interrupt implementation (2026-10-22)
+
+- Implemented the user-selected staged scope in one firmware change: the four active-low buttons use GPIO negative-edge interrupts, and the flame D0 input uses GPIO any-edge interrupts. Both ISRs do only `vTaskNotifyGiveFromISR()` and never read GPIO, log, access shared control state, change relay state, display LCD, publish web state or send Telegram.
+- `button_task` is awakened early by a button interrupt but still polls on a 10 ms timeout and uses the same 30 ms stable debounce rule before calling `control_send_button`. `sensor_task` runs at its existing 100 ms cadence without D0 edges; on a D0 interrupt it waits 30 ms for the D0 output to settle, then executes its normal `sensor_run_once` path. Therefore control_task remains sole state owner and the existing 3-second fire-clear policy is unchanged.
+- The ESP-IDF GPIO ISR service is shared safely: whichever driver starts first installs it; the other accepts `ESP_ERR_INVALID_STATE` as already installed and adds its own per-GPIO handler. Failure while adding button handlers rolls back only handlers added by the button driver.
+- Added `button_debounce.h` plus standalone GCC test `test_button_debounce.c`. It passes with `-std=c11 -Wall -Wextra -Werror -pedantic`, verifying short bounce suppression and exactly one event while a button is held. ESP-IDF 5.5.4 Ninja build passed: `Gas_System.bin` 0x1051d0 in 0x177000 app partition, 0x71e30 (30%) free. Build logs: `%TEMP%\gas_interrupt_ninja_final.log` and `%TEMP%\gas_interrupt_ninja_after_test.log`. No board flash or physical interrupt/noise measurement has been performed.

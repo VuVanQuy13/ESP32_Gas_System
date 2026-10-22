@@ -302,3 +302,9 @@ The standalone flame D0 host-test source was removed at the user request; the pr
 - Extend the existing control transition reporting and Telegram event formatting for fire and fire-clear in Auto and Manual. Coalesce gas+fire transitions from one core event into one message; retain current one-attempt/drop policy for offline, busy, or failed delivery.
 - Add a shared raw-ADC hysteresis menuconfig setting (default 50, proposed range 1..100) used by both Auto relay release and gas Telegram recovery. D0 transitions remain immediate at current sensor sampling cadence without debounce.
 - Requirements agreed; implementation is pending an explicit request to start coding.
+
+## GPIO interrupt path
+
+- `drivers/buttons/buttons.c` configures active-low buttons with `GPIO_INTR_NEGEDGE`, then installs four per-pin ISR handlers after `button_task` exists. Each ISR only wakes that task with an ISR-safe FreeRTOS notification. `button_task/button_task.c` continues its 10 ms timeout read and uses `button_debounce.h` for 30 ms debounce before it sends an existing control command.
+- `drivers/flame_d0/flame_d0.c` configures D0 with `GPIO_INTR_ANYEDGE`, then attaches its ISR after `sensor_task` exists. The ISR only wakes sensor_task. `sensor_task/sensor_task.c` delays 30 ms when woken by D0 and takes the usual sample path; thus D0 validation, control events, LCD, web, relay and Telegram retain their existing ownership boundaries.
+- `button_task/test_button_debounce.c` is a standalone host regression test, not included in firmware CMake. It protects the debounce behavior used by the button interrupt task.
