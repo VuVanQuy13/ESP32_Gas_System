@@ -442,6 +442,12 @@ CONFIG_LCD_DEN_MUC_CAO=y
 # end of MQ-2 va LCD
 
 #
+# Dieu khien
+#
+CONFIG_GAS_THRESHOLD_HYSTERESIS=50
+# end of Dieu khien
+
+#
 # Chan GPIO - Gas System (ESP32 DevKit V1)
 #
 CONFIG_GAS_GPIO_MQ2=34
@@ -452,7 +458,14 @@ CONFIG_GAS_GPIO_NUT_BAT=25
 CONFIG_GAS_GPIO_NUT_TAT=26
 CONFIG_GAS_GPIO_NUT_CHE_DO=27
 CONFIG_GAS_GPIO_NUT_CHINH=32
+CONFIG_GAS_GPIO_FIRE_D0=4
 # end of Chan GPIO - Gas System (ESP32 DevKit V1)
+
+#
+# Cam bien lua
+#
+CONFIG_GAS_FIRE_D0_ACTIVE_LOW=y
+# end of Cam bien lua
 
 #
 # Web LAN

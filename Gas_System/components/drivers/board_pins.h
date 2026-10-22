@@ -61,6 +61,20 @@ _Static_assert(
 _Static_assert(
     CONFIG_GAS_GPIO_NUT_CHE_DO != CONFIG_GAS_GPIO_NUT_CHINH, "Trung GPIO: NUT_CHE_DO / NUT_CHINH");
 
+/* Cam bien lua chi can input; GPIO34..39 la input-only, khong co pull noi. */
+_Static_assert(
+    IS_VALID_OUTPUT_GPIO(CONFIG_GAS_GPIO_FIRE_D0) ||
+        (CONFIG_GAS_GPIO_FIRE_D0 >= 34 && CONFIG_GAS_GPIO_FIRE_D0 <= 39),
+    "GPIO FIRE_D0 khong hop le; xem menu Chan GPIO");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_MQ2, "Trung GPIO: FIRE_D0 / MQ2");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_LCD_SDA, "Trung GPIO: FIRE_D0 / LCD_SDA");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_LCD_SCL, "Trung GPIO: FIRE_D0 / LCD_SCL");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_RELAY, "Trung GPIO: FIRE_D0 / RELAY");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_NUT_BAT, "Trung GPIO: FIRE_D0 / NUT_BAT");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_NUT_TAT, "Trung GPIO: FIRE_D0 / NUT_TAT");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_NUT_CHE_DO, "Trung GPIO: FIRE_D0 / NUT_CHE_DO");
+_Static_assert(CONFIG_GAS_GPIO_FIRE_D0 != CONFIG_GAS_GPIO_NUT_CHINH, "Trung GPIO: FIRE_D0 / NUT_CHINH");
+
 /* ADC1: GPIO36=CH0, GPIO39=CH3, GPIO32..35=CH4..7. */
 #define MQ2_ADC_CHANNEL                                                                            \
     (CONFIG_GAS_GPIO_MQ2 == 36 ? 0 : CONFIG_GAS_GPIO_MQ2 == 39 ? 3 : CONFIG_GAS_GPIO_MQ2 - 28)

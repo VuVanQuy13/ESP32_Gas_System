@@ -8,6 +8,7 @@
 #include "storage_task.h"
 #include "sensor_task.h"
 #include "mq2.h"
+#include "flame_d0.h"
 #include "display_task.h"
 #include "lcd1602_i2c.h"
 #include "esp_random.h"
@@ -47,7 +48,7 @@ void app_main(void)
             .required_sample_count = 3,
             .minimum_threshold = 100,
             .maximum_threshold = 4000,
-            .threshold_hysteresis = 50,
+            .threshold_hysteresis = CONFIG_GAS_THRESHOLD_HYSTERESIS,
             .initial_draft_threshold = 600
         },
         .boot_id = 1,
@@ -63,8 +64,9 @@ void app_main(void)
      * Khi đó Auto vẫn giữ relay tắt. */
 
     ESP_LOGI(TAG,
-        "su_kien=cau_hinh_gpio mq2=%d relay=%d sda=%d scl=%d nut=%d,%d,%d,%d",
+        "su_kien=cau_hinh_gpio mq2=%d fire_d0=%d relay=%d sda=%d scl=%d nut=%d,%d,%d,%d",
         CONFIG_GAS_GPIO_MQ2,
+        CONFIG_GAS_GPIO_FIRE_D0,
         CONFIG_GAS_GPIO_RELAY,
         CONFIG_GAS_GPIO_LCD_SDA,
         CONFIG_GAS_GPIO_LCD_SCL,
@@ -76,6 +78,13 @@ void app_main(void)
 
     ESP_ERROR_CHECK(relay_initialize());
     ESP_ERROR_CHECK(button_initialize());
+    esp_err_t flame_error = flame_d0_initialize();
+    bool monitor_flame = flame_error == ESP_OK;
+    if (monitor_flame)
+        ESP_LOGI(TAG, "su_kien=cam_bien_lua_khoi_tao gpio=%d active_low=%d", CONFIG_GAS_GPIO_FIRE_D0, CONFIG_GAS_FIRE_D0_ACTIVE_LOW);
+    else
+        ESP_LOGE(TAG, "su_kien=loi_khoi_tao_cam_bien_lua loi=%d", flame_error);
+
     esp_err_t adc_error = mq2_initialize(&mq2_adc_channel);
     if (adc_error != ESP_OK)
         ESP_LOGE(TAG, "su_kien=loi_khoi_tao_adc loi=%d", adc_error);
@@ -118,6 +127,7 @@ void app_main(void)
         .sample_timeout_ms = 500,
         .read_adc = read_real_adc,
         .context = &mq2_adc_channel,
+        .monitor_flame = monitor_flame,
     };
     sensor_task_t *sensor_worker = NULL;
     ESP_ERROR_CHECK(sensor_task_start(&sensor_worker, service, &sensor_setup));

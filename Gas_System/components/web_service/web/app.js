@@ -22,9 +22,10 @@ function taoLenh(s, loai, giaTri, id)
 function trangThaiHopLe(s)
 {
     const hex = x => typeof x === "string" && /^[0-9a-f]{16}$/.test(x);
-    return s && s.type === "state" && s.v === 1 &&
+    return s && s.type === "state" && s.v === 2 &&
            [ s.boot, s.seq, s.control, s.edit, s.revision, s.save_id ].every(hex) &&
-           [ s.mode, s.config, s.relay, s.save_error, s.stale, s.unknown ].every(
+           [ s.mode, s.config, s.relay, s.save_error, s.stale, s.unknown,
+             s.fire_valid, s.fire, s.fire_confirming ].every(
                x => x === 0 || x === 1) &&
            [ 0, 1, 2 ].includes(s.sensor) && [ 0, 1, 2 ].includes(s.editing) &&
            Number.isInteger(s.relay_error) &&
@@ -62,6 +63,22 @@ if (typeof document !== "undefined")
                                       : s.relay                ? "Bật"
                                                                : "Tắt";
             el("nguong").textContent = s && s.config ? s.threshold : "Chưa lưu";
+            const fire_card = el("trang-thai-lua");
+            fire_card.classList.remove("bao-dong-lua", "bao-xac-nhan-lua", "bao-loi-lua");
+            if (!online) {
+                el("lua").textContent = "Chưa đồng bộ";
+            } else if (!s.fire_valid) {
+                el("lua").textContent = "Không đọc được D0";
+                fire_card.classList.add("bao-loi-lua");
+            } else if (s.fire) {
+                el("lua").textContent = "Phát hiện lửa";
+                fire_card.classList.add("bao-dong-lua");
+            } else if (s.fire_confirming) {
+                el("lua").textContent = "Đang xác nhận hết";
+                fire_card.classList.add("bao-xac-nhan-lua");
+            } else {
+                el("lua").textContent = "Không phát hiện";
+            }
             const chinh = !!s && s.editing === 1, luu = !!s && s.editing === 2,
                   khoa = !online || !!cho;
             el("tang").textContent = chinh ? "Tăng +" : "Bật relay";

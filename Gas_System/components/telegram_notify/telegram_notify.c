@@ -5,6 +5,7 @@
 #if CONFIG_GAS_TELEGRAM_ENABLED
 
 #include "telegram_notify_format.h"
+#include "telegram_notify_pending.h"
 
 #include "cJSON.h"
 #include "esp_crt_bundle.h"
@@ -38,6 +39,7 @@ static QueueHandle_t event_queue;
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool service_started;
 static bool event_in_progress;
+static telegram_notify_pending_state pending_state;
 
 static bool is_valid_token(const char *token)
 {
@@ -221,8 +223,9 @@ static esp_err_t send_event_once(const telegram_notify_event *event)
     if (api_success) {
         ESP_LOGI(
             TAG,
-            "event=send result=success kind=%s adc=%d threshold=%d http=%d",
-            event->type == TELEGRAM_NOTIFY_EVENT_ALARM ? "alarm" : "recovery",
+            "event=send result=success transitions=0x%lx gas_data=%d adc=%d threshold=%d http=%d",
+            (unsigned long)event->transitions,
+            event->has_gas_reading,
             event->adc_value,
             event->threshold,
             status_code
@@ -232,8 +235,9 @@ static esp_err_t send_event_once(const telegram_notify_event *event)
 
     ESP_LOGE(
         TAG,
-        "event=send result=drop kind=%s adc=%d threshold=%d http=%d error=%s api_ok=%d",
-        event->type == TELEGRAM_NOTIFY_EVENT_ALARM ? "alarm" : "recovery",
+        "event=send result=drop transitions=0x%lx gas_data=%d adc=%d threshold=%d http=%d error=%s api_ok=%d",
+        (unsigned long)event->transitions,
+        event->has_gas_reading,
         event->adc_value,
         event->threshold,
         status_code,
@@ -253,11 +257,17 @@ static void telegram_worker(void *argument)
             continue;
         }
 
-        send_event_once(&event);
+        bool has_pending;
+        do {
+            send_event_once(&event);
 
-        portENTER_CRITICAL(&state_lock);
-        event_in_progress = false;
-        portEXIT_CRITICAL(&state_lock);
+            portENTER_CRITICAL(&state_lock);
+            has_pending = telegram_notify_pending_take(&pending_state, &event);
+            if (!has_pending) {
+                event_in_progress = false;
+            }
+            portEXIT_CRITICAL(&state_lock);
+        } while (has_pending);
     }
 }
 
@@ -304,6 +314,7 @@ esp_err_t telegram_notify_start(void)
 
     portENTER_CRITICAL(&state_lock);
     event_in_progress = false;
+    memset(&pending_state, 0, sizeof(pending_state));
     service_started = true;
     portEXIT_CRITICAL(&state_lock);
 
@@ -313,10 +324,19 @@ esp_err_t telegram_notify_start(void)
 
 esp_err_t telegram_notify_submit(const telegram_notify_event *event)
 {
-    if (event == NULL || event->adc_value < 0 || event->adc_value > 4095 ||
-        event->threshold < 0 || event->threshold > 4095 ||
-        (event->type != TELEGRAM_NOTIFY_EVENT_ALARM &&
-         event->type != TELEGRAM_NOTIFY_EVENT_RECOVERY)) {
+    const uint32_t gas_transitions =
+        TELEGRAM_NOTIFY_GAS_ALARM | TELEGRAM_NOTIFY_GAS_RECOVERY;
+    const bool has_gas_transition =
+        event != NULL && (event->transitions & gas_transitions) != 0;
+    if (event == NULL || event->transitions == 0 ||
+        (event->transitions & ~TELEGRAM_NOTIFY_ALL_TRANSITIONS) != 0 ||
+        ((event->transitions & gas_transitions) == gas_transitions) ||
+        ((event->transitions & (TELEGRAM_NOTIFY_FIRE_DETECTED | TELEGRAM_NOTIFY_FIRE_CLEARED)) ==
+            (TELEGRAM_NOTIFY_FIRE_DETECTED | TELEGRAM_NOTIFY_FIRE_CLEARED)) ||
+        event->has_gas_reading != has_gas_transition ||
+        (has_gas_transition &&
+            (event->adc_value < 0 || event->adc_value > 4095 ||
+                event->threshold < 0 || event->threshold > 4095))) {
         ESP_LOGE(TAG, "event=submit result=drop reason=invalid_event");
         return ESP_ERR_INVALID_ARG;
     }
@@ -329,7 +349,14 @@ esp_err_t telegram_notify_submit(const telegram_notify_event *event)
     }
 
     if (event_in_progress) {
+        const bool held = telegram_notify_pending_handle_busy(&pending_state, event);
         portEXIT_CRITICAL(&state_lock);
+        if (held) {
+            ESP_LOGI(TAG,
+                "event=submit result=held_for_send transitions=0x%lx",
+                (unsigned long)event->transitions);
+            return ESP_OK;
+        }
         ESP_LOGW(TAG, "event=submit result=drop reason=worker_busy");
         return ESP_ERR_TIMEOUT;
     }
@@ -352,8 +379,9 @@ esp_err_t telegram_notify_submit(const telegram_notify_event *event)
 
     ESP_LOGI(
         TAG,
-        "event=submit result=accepted kind=%s adc=%d threshold=%d",
-        event->type == TELEGRAM_NOTIFY_EVENT_ALARM ? "alarm" : "recovery",
+        "event=submit result=accepted transitions=0x%lx gas_data=%d adc=%d threshold=%d",
+        (unsigned long)event->transitions,
+        event->has_gas_reading,
         event->adc_value,
         event->threshold
     );

@@ -3,6 +3,7 @@ idf_component_register(
         "relay/relay.c"
         "buttons/buttons.c"
         "mq2/mq2.c"
+        "flame_d0/flame_d0.c"
         "lcd1602/lcd1602.c"
         "lcd1602/lcd1602_i2c.c"
     INCLUDE_DIRS
@@ -10,6 +11,7 @@ idf_component_register(
         "relay"
         "buttons"
         "mq2"
+        "flame_d0"
         "lcd1602"
     REQUIRES
         esp_driver_gpio

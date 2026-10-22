@@ -5312,6 +5312,27 @@
                     {
                         "children": [],
                         "depends_on": null,
+                        "help": "Dung chung cho moc tat relay Auto va moc hoi phuc canh bao gas Telegram.\nDon vi la so dem ADC tho, khong phai ppm. Gioi han toi da 100 theo nguong gas toi thieu hien tai.",
+                        "id": "GAS_THRESHOLD_HYSTERESIS",
+                        "name": "GAS_THRESHOLD_HYSTERESIS",
+                        "range": [
+                            1,
+                            100
+                        ],
+                        "title": "Do tre nguong hysteresis MQ-2 (ADC tho)",
+                        "type": "int"
+                    }
+                ],
+                "depends_on": null,
+                "id": "gas_system-dieu-khien",
+                "title": "Dieu khien",
+                "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
                         "help": "ADC1: chi chon 32, 33, 34, 35, 36 hoac 39.",
                         "id": "GAS_GPIO_MQ2",
                         "name": "GAS_GPIO_MQ2",
@@ -5412,11 +5433,42 @@
                         ],
                         "title": "GPIO NUT_CHINH",
                         "type": "int"
+                    },
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Dau vao so D0 cua module cam bien lua. Co the chon GPIO34..39 vi day la chan input-only.",
+                        "id": "GAS_GPIO_FIRE_D0",
+                        "name": "GAS_GPIO_FIRE_D0",
+                        "range": [
+                            0,
+                            39
+                        ],
+                        "title": "GPIO FIRE_D0",
+                        "type": "int"
                     }
                 ],
                 "depends_on": null,
                 "id": "gas_system-chan-gpio-gas-system-esp32-devkit-v1-",
                 "title": "Chan GPIO - Gas System (ESP32 DevKit V1)",
+                "type": "menu"
+            },
+            {
+                "children": [
+                    {
+                        "children": [],
+                        "depends_on": null,
+                        "help": "Mac dinh phan lon module digital bao lua bang muc LOW. Tat neu module cua ban bao lua bang muc HIGH.",
+                        "id": "GAS_FIRE_D0_ACTIVE_LOW",
+                        "name": "GAS_FIRE_D0_ACTIVE_LOW",
+                        "range": null,
+                        "title": "D0 muc LOW khi phat hien lua",
+                        "type": "bool"
+                    }
+                ],
+                "depends_on": null,
+                "id": "gas_system-cam-bien-lua",
+                "title": "Cam bien lua",
                 "type": "menu"
             },
             {

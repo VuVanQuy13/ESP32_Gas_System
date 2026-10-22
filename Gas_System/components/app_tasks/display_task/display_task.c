@@ -18,6 +18,21 @@ static void close_count(char out[17], const char *text)
     out[16] = '\0';
 }
 
+/* Giữ ba ô cuối dòng hai cho trạng thái D0: F:1, F:0 hoặc F:?. */
+static void close_count_with_fire_status(char out[17], const char *text, char fire_status)
+{
+    size_t length = strlen(text);
+    if (length > 13)
+        length = 13;
+
+    memset(out, ' ', 16);
+    memcpy(out, text, length);
+    out[13] = 'F';
+    out[14] = ':';
+    out[15] = fire_status;
+    out[16] = '\0';
+}
+
 static esp_err_t display_build_frame(const control_snapshot *snapshot, uint64_t now, lcd_frame *result)
 {
     if (!snapshot || !result || !snapshot->state.initialized)
@@ -59,8 +74,10 @@ static esp_err_t display_build_frame(const control_snapshot *snapshot, uint64_t 
         snprintf(duoi, sizeof(duoi), "CAN DAT NGUONG");
     else
         snprintf(duoi, sizeof(duoi), "NGUONG:%4d", state->threshold);
+    const char fire_status = !state->fire_read_valid ? '?' :
+        (state->fire_detected ? '1' : '0');
     close_count(result->close_count[0], tren);
-    close_count(result->close_count[1], duoi);
+    close_count_with_fire_status(result->close_count[1], duoi, fire_status);
     return ESP_OK;
 }
 

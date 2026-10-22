@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "Gas_System",
-    "project_version":    "7ddd020-dirty",
+    "project_version":    "b8f8735-dirty",
     "project_path":       "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System",
     "idf_path":           "D:/SotaTek/AI_robot/ESP32_ENV/Espressif/frameworks/esp-idf-v5.5.4",
     "build_dir":          "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build",
@@ -205,8 +205,8 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/drivers/libdrivers.a",
-            "sources": [ "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/relay/relay.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/buttons/buttons.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/mq2/mq2.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/lcd1602/lcd1602.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/lcd1602/lcd1602_i2c.c" ],
-            "include_dirs": [ ".", "relay", "buttons", "mq2", "lcd1602" ]
+            "sources": [ "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/relay/relay.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/buttons/buttons.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/mq2/mq2.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/flame_d0/flame_d0.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/lcd1602/lcd1602.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/drivers/lcd1602/lcd1602_i2c.c" ],
+            "include_dirs": [ ".", "relay", "buttons", "mq2", "flame_d0", "lcd1602" ]
         },
         "efuse": {
             "alias": "idf::efuse",
@@ -1585,7 +1585,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/build/esp-idf/telegram_notify/libtelegram_notify.a",
-            "sources": [ "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/telegram_notify/telegram_notify.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/telegram_notify/telegram_notify_format.c" ],
+            "sources": [ "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/telegram_notify/telegram_notify.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/telegram_notify/telegram_notify_format.c", "D:/WorkPlace/School/Ki_Thuat_Cam_Bien/Gas_System/components/telegram_notify/telegram_notify_pending.c" ],
             "include_dirs": [ "include" ]
         },
         "ulp": {
@@ -3079,7 +3079,7 @@
             "priv_reqs": [],
             "managed_reqs": [],
             "managed_priv_reqs": [],
-            "include_dirs": [ ".", "relay", "buttons", "mq2", "lcd1602" ]
+            "include_dirs": [ ".", "relay", "buttons", "mq2", "flame_d0", "lcd1602" ]
         },
         "network": {
             "alias": "idf::network",

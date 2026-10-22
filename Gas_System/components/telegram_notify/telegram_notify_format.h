@@ -5,7 +5,7 @@
 
 #include "telegram_notify_types.h"
 
-#define TELEGRAM_NOTIFY_MESSAGE_MAX 128
+#define TELEGRAM_NOTIFY_MESSAGE_MAX 256
 
 /* Ham thuan C: kiem tra va tao noi dung tin nhan ADC tho. */
 int telegram_notify_format_message(

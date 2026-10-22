@@ -27,7 +27,7 @@ Ví dụ Manual, relay được yêu cầu bật, mẫu vượt ngưỡng, đang
 
 ```text
 M R:1 VUOT  800 
-CHINH: 700      
+CHINH: 700  F:1
 ```
 
 Source luôn tạo đúng 16 ký tự mỗi dòng, thêm khoảng trắng để xóa phần chữ cũ.
@@ -48,10 +48,16 @@ Ký tự dùng ASCII; tiếng Việt có dấu cần thiết kế bộ ký tự 
 | `DANG LUU: ...` | Đang chờ kết quả lưu |
 | `LUU CHUA RO` | Lưu quá hạn nhưng chưa biết kết quả cuối |
 | `LOI LUU: ...` | Lưu thất bại; giữ bản nháp cho lần thử lại |
+| `F:1` | D0 đọc hợp lệ và đang phát hiện lửa |
+| `F:0` | D0 đọc hợp lệ và không phát hiện lửa |
+| `F:?` | Chưa có lần đọc D0 hợp lệ hoặc lần đọc D0 gần nhất bị lỗi |
 
 Lỗi cảm biến nằm ở dòng đầu, nên vẫn nhìn thấy trong lúc chỉnh/lưu ở dòng hai.
 Khi snapshot quá cũ, dòng hai chuyển sang `CHO DU LIEU MOI`.
 `R:?` không thể thay cho đo mức chân hoặc tiếp điểm relay trên board.
+
+Ba ô cuối dòng hai luôn dành cho `F:1`, `F:0` hoặc `F:?`. Nội dung chính của
+dòng hai chỉ dùng tối đa 13 ô để không ghi đè trạng thái lửa.
 
 Snapshot được bổ sung cờ `loi_luu`, do control_task sở hữu: giữ sau lỗi Save,
 không mất khi có mẫu mới. Cờ được xóa khi bắt đầu phiên chỉnh mới, thử lưu lại

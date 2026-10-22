@@ -79,23 +79,18 @@ static void submit_telegram_notification(
     const control_result *result)
 {
     if (!service->setup.telegram_notifications_ready ||
-        result->notification == CONTROL_NOTIFICATION_NONE) {
+        result->notifications == CONTROL_NOTIFICATION_NONE) {
         return;
     }
 
+    const bool has_gas_reading = (result->notifications &
+        (CONTROL_NOTIFICATION_GAS_ALARM | CONTROL_NOTIFICATION_GAS_RECOVERY)) != 0;
     telegram_notify_event notification_event = {
+        .transitions = result->notifications,
+        .has_gas_reading = has_gas_reading,
         .adc_value = result->notification_sample,
         .threshold = result->notification_threshold,
     };
-
-    if (result->notification == CONTROL_NOTIFICATION_GAS_ALARM) {
-        notification_event.type = TELEGRAM_NOTIFY_EVENT_ALARM;
-    } else if (result->notification == CONTROL_NOTIFICATION_GAS_RECOVERY) {
-        notification_event.type = TELEGRAM_NOTIFY_EVENT_RECOVERY;
-    } else {
-        ESP_LOGE(TAG, "su_kien=telegram_handoff ket_qua=bo_qua ly_do=loai_su_kien_khong_hop_le");
-        return;
-    }
 
     const esp_err_t error = telegram_notify_submit(&notification_event);
     if (error != ESP_OK) {
@@ -114,19 +109,26 @@ static control_result process(control_service_t *service, const control_event *e
     bool previous_save_unknown = service->state.save_result_unknown;
     control_result_code code = control_process_event(&service->state, event, get_time_ms(), &result);
 
-    if (result.notification == CONTROL_NOTIFICATION_GAS_ALARM) {
+    if (result.notifications & CONTROL_NOTIFICATION_GAS_ALARM) {
         ESP_LOGW(TAG,
             "su_kien=chinh_sach_canh_bao chuyen=VUOT_NGUONG adc=%d nguong=%d che_do=%s",
             result.notification_sample,
             result.notification_threshold,
             result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
-    } else if (result.notification == CONTROL_NOTIFICATION_GAS_RECOVERY) {
+    }
+    if (result.notifications & CONTROL_NOTIFICATION_GAS_RECOVERY) {
         ESP_LOGI(TAG,
             "su_kien=chinh_sach_canh_bao chuyen=ON_DINH adc=%d nguong=%d che_do=%s",
             result.notification_sample,
             result.notification_threshold,
             result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
     }
+    if (result.notifications & CONTROL_NOTIFICATION_FIRE_DETECTED)
+        ESP_LOGW(TAG, "su_kien=chinh_sach_canh_bao chuyen=PHAT_HIEN_LUA che_do=%s",
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
+    if (result.notifications & CONTROL_NOTIFICATION_FIRE_CLEARED)
+        ESP_LOGI(TAG, "su_kien=chinh_sach_canh_bao chuyen=HET_LUA che_do=%s",
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
 
     /* Timeout có thể đổi đầu ra kể cả khi lệnh bị từ chối. */
     if (result.relay_changed || service->output_error != ESP_OK) {
@@ -135,11 +137,32 @@ static control_result process(control_service_t *service, const control_event *e
             ESP_LOGE(TAG, "su_kien=loi_gpio ma=%d muc=%d", service->output_error, result.relay_on);
     }
 
-    if (result.relay_changed && service->output_error == ESP_OK)
+    if (result.relay_changed && service->output_error == ESP_OK) {
+        const char *reason;
+        if (service->state.mode == CONTROL_MODE_MANUAL) {
+            reason = "lenh_manual";
+        } else if (service->state.fire_detected) {
+            reason = "phat_hien_lua";
+        } else if (service->state.sensor_status != SENSOR_READY ||
+                   !service->state.configuration_valid) {
+            reason = "mq2_chua_san_sang";
+        } else if (service->state.sample >= service->state.threshold) {
+            reason = "mq2_vuot_nguong";
+        } else if (result.relay_on) {
+            reason = "giu_trang_thai_hysteresis";
+        } else {
+            reason = "gas_thap_va_khong_lua";
+        }
+
         ESP_LOGI(TAG,
-            "su_kien=xuat_relay yeu_cau=%s che_do=%s",
+            "su_kien=xuat_relay yeu_cau=%s che_do=%s nguyen_nhan=%s lua=%d adc=%d nguong=%d",
             result.relay_on ? "BAT" : "TAT",
-            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL");
+            result.mode == CONTROL_MODE_AUTO ? "AUTO" : "MANUAL",
+            reason,
+            service->state.fire_detected,
+            service->state.sample,
+            service->state.threshold);
+    }
     if (result.needs_save) {
         storage_job job = { service->state.boot_id, result.save_id, result.threshold_to_save };
         if (xQueueSend(service->storage_jobs, &job, 0) != pdPASS) {

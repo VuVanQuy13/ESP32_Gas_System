@@ -7,14 +7,16 @@ Project firmware nhúng dùng **ESP32-DevKit V1** và **ESP-IDF 5.5.4**. Hệ th
 ## Tính năng
 
 - Đọc ngõ **AO** của MQ-2 định kỳ bằng ADC1; kiểm tra mẫu và chờ thời gian ổn định đã cấu hình trước khi báo cảm biến sẵn sàng.
+- Đọc ngõ **D0** của module phát hiện lửa qua GPIO4 mặc định; polarity LOW/HIGH có thể chọn trong menuconfig. Trong Auto, phát hiện lửa bật relay độc lập với số đo MQ-2.
 - Điều khiển hệ thống ở hai chế độ:
-  - **Auto:** relay tự bật/tắt theo ngưỡng ADC và độ trễ ngưỡng (hysteresis).
+  - **Auto:** relay bật khi gas vượt ngưỡng **hoặc** phát hiện lửa; tắt theo hysteresis gas khi không còn lửa.
   - **Manual:** relay chỉ thay đổi theo nút cứng hoặc lệnh web; trạng thái vượt ngưỡng vẫn được hiển thị.
 - Hiển thị giá trị cảm biến, chế độ, relay và trạng thái hệ thống trên LCD 16×2.
 - Có bốn nút cứng: bật/tăng, tắt/giảm, đổi Auto/Manual và vào/lưu chỉnh ngưỡng.
 - Cung cấp trang web qua Wi-Fi cùng mạng để xem trạng thái thời gian thực, điều khiển relay/chế độ và chỉnh ngưỡng.
 - Lưu ngưỡng vào NVS; khi khởi động lại hệ thống dùng ngưỡng đã lưu, bắt đầu ở Auto và giữ relay tắt cho đến khi cảm biến sẵn sàng.
 - Khi mất dữ liệu cảm biến hợp lệ trong lúc chạy Auto, hệ thống tắt relay và báo lỗi cảm biến.
+- Có thể gửi Telegram khi gas vượt ngưỡng/hồi phục hoặc lửa được phát hiện/xác nhận đã hết. Sự kiện gas và lửa cùng lúc được gộp thành một tin nhắn; lỗi đọc D0 không được xem là xác nhận hết lửa.
 - Cho phép đổi GPIO từ `menuconfig`; firmware kiểm tra một số chân không phù hợp hoặc bị trùng khi biên dịch.
 
 ## Phần cứng
@@ -23,13 +25,14 @@ Project firmware nhúng dùng **ESP32-DevKit V1** và **ESP-IDF 5.5.4**. Hệ th
 | --- | --- |
 | ESP32-DevKit V1 (ESP32 classic) | MCU chạy firmware và kết nối Wi-Fi |
 | Module MQ-2 / FC-22 có AO/DO | Firmware đọc **AO**; chân DO không dùng |
+| Module cảm biến lửa có ngõ D0 | Firmware đọc **D0** bằng GPIO4 mặc định; cần xác nhận cực tính và mức điện áp D0 của module |
 | LCD 16×2 kèm backpack PCF8574 | Hiển thị qua bus I2C |
 | 4 nút nhấn | Nối GPIO xuống GND khi nhấn; cấu hình hiện tại dùng pull-up nội bộ |
 | Module relay 5 V, 10 A | Firmware điều khiển ngõ logic active-high: HIGH bật, LOW tắt |
 | LED rời và điện trở hạn dòng | Tải demo 3,3 V được đóng/ngắt qua tiếp điểm relay |
 | Nguồn và linh kiện giao tiếp | Theo sơ đồ nối mạch; MQ-2/LCD dùng nhánh 5 V ngoài, chung GND với ESP32. Sơ đồ LCD 5 V có bộ chuyển mức I2C hai chiều |
 
-GPIO mặc định trong `sdkconfig`: MQ-2 AO = GPIO34, LCD SDA/SCL = GPIO21/GPIO22, relay = GPIO23, bốn nút = GPIO25/GPIO26/GPIO27/GPIO32. Có thể thay đổi trong `idf.py menuconfig` → `Gas_System` → `Chan GPIO` và phải đấu dây theo cấu hình mới.
+GPIO mặc định trong `sdkconfig`: MQ-2 AO = GPIO34, cảm biến lửa D0 = GPIO4, LCD SDA/SCL = GPIO21/GPIO22, relay = GPIO23, bốn nút = GPIO25/GPIO26/GPIO27/GPIO32. Có thể thay đổi trong `idf.py menuconfig` → `Gas_System` → `Chan GPIO` và phải đấu dây theo cấu hình mới. D0 phải giữ mức điện áp tương thích ESP32 (khuyến nghị không quá 3,3 V).
 
 ## Phần mềm và công cụ
 
@@ -45,6 +48,7 @@ GPIO mặc định trong `sdkconfig`: MQ-2 AO = GPIO34, LCD SDA/SCL = GPIO21/GPI
 | Peripheral/giao tiếp | Vai trò |
 | --- | --- |
 | **GPIO input** | Đọc bốn nút nhấn; task nút lọc dội (debounce) bằng phần mềm |
+| **GPIO input** | Đọc D0 của cảm biến lửa theo chu kỳ sensor task; log trạng thái khi đổi |
 | **GPIO output** | Xuất mức điều khiển relay; LOW được đặt khi khởi tạo để relay bắt đầu tắt |
 | **ADC1, oneshot** | Đọc analog từ MQ-2 AO. Cấu hình hiện tại dùng độ phân giải 12-bit và attenuation 12 dB; giá trị phần mềm dùng là ADC thô |
 | **I2C master** | Giao tiếp với PCF8574 của LCD ở 100 kHz; địa chỉ có thể cấu hình hoặc dò trong dải PCF8574/PCF8574A |
@@ -57,7 +61,7 @@ Các dịch vụ ESP-IDF đi cùng nhưng không phải chân ngoại vi nối t
 
 1. Cài và mở môi trường ESP-IDF 5.5.4.
 2. Đọc [sơ đồ nối mạch](docs/wiring.md) và kiểm tra mức điện áp trước khi nối AO vào ESP32.
-3. Từ thư mục `Gas_System`, chạy `idf.py menuconfig`; vào `Gas_System` để cấu hình Wi-Fi, thời gian ổn định MQ-2, địa chỉ LCD và GPIO theo mạch thực tế. Không commit mật khẩu Wi-Fi.
+3. Từ thư mục `Gas_System`, chạy `idf.py menuconfig`; vào `Gas_System` để cấu hình Wi-Fi, thời gian ổn định MQ-2, địa chỉ LCD, GPIO, hysteresis và Telegram theo mạch thực tế. Hysteresis mặc định 50 là số đếm ADC thô, không phải ppm. Không commit mật khẩu Wi-Fi hoặc token Telegram.
 4. Build và nạp firmware bằng lệnh dưới đây; thay `COMx` bằng cổng serial của board:
 
    ```powershell

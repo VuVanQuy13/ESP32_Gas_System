@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         "telegram_notify.c"
         "telegram_notify_format.c"
+        "telegram_notify_pending.c"
     INCLUDE_DIRS
         "include"
     PRIV_INCLUDE_DIRS

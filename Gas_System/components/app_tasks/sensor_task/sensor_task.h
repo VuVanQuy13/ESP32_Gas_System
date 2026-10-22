@@ -10,6 +10,7 @@ typedef struct {
     /* Callback ngắn, chỉ đọc mẫu thô. Ngu cảnh tồn tại đến reset. */
     esp_err_t (*read_adc)(int *sample, void *context);
     void *context;
+    bool monitor_flame;
 } sensor_task_config;
 
 /* Gọi một lần sau khi tạo dịch vụ điều khiển; task sở hữu bộ lọc và sequence. */

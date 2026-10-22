@@ -1,6 +1,8 @@
 ﻿#include "sensor_task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "flame_d0.h"
+#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include <inttypes.h>
@@ -38,6 +40,7 @@ struct sensor_task {
     sensor_filter filtered;
     uint64_t sequence, previous_read_time_ms, previous_log_time_ms;
     bool has_logged, logged_sample_valid;
+    bool has_logged_flame, last_flame_detected, flame_read_failed;
     TaskHandle_t task_handle;
 };
 
@@ -46,11 +49,48 @@ static uint64_t get_time_ms(void)
     return (uint64_t)(esp_timer_get_time() / 1000);
 }
 
+/* Doc D0 doc lap voi ADC MQ-2; chi ghi log khi trang thai doi hoac co loi. */
+static bool sensor_monitor_flame(sensor_task_t *worker, bool *reading_valid)
+{
+    if (!reading_valid)
+        return false;
+
+    *reading_valid = false;
+    if (!worker->setup.monitor_flame)
+        return false;
+
+    flame_d0_reading reading;
+    esp_err_t error = flame_d0_read(&reading);
+    if (error != ESP_OK) {
+        if (!worker->flame_read_failed)
+            ESP_LOGE("cam_bien_lua", "su_kien=loi_doc_d0 gpio=%d loi=%d", CONFIG_GAS_GPIO_FIRE_D0, error);
+        worker->flame_read_failed = true;
+        return false;
+    }
+
+    *reading_valid = true;
+    if (!worker->has_logged_flame || worker->flame_read_failed ||
+        worker->last_flame_detected != reading.flame_detected) {
+        ESP_LOGI("cam_bien_lua",
+            "su_kien=trang_thai gpio=%d d0=%s phat_hien_lua=%d",
+            CONFIG_GAS_GPIO_FIRE_D0,
+            reading.d0_level ? "HIGH" : "LOW",
+            reading.flame_detected);
+    }
+
+    worker->has_logged_flame = true;
+    worker->flame_read_failed = false;
+    worker->last_flame_detected = reading.flame_detected;
+    return reading.flame_detected;
+}
+
 static esp_err_t sensor_run_once(sensor_task_t *worker)
 {
     if (!worker)
         return ESP_ERR_INVALID_ARG;
     uint64_t read_time_ms = get_time_ms();
+    bool fire_read_valid = false;
+    bool fire_detected = sensor_monitor_flame(worker, &fire_read_valid);
     if (worker->sequence == UINT64_MAX || (worker->sequence && read_time_ms <= worker->previous_read_time_ms))
         return ESP_ERR_INVALID_STATE;
     bool sample_gap = worker->sequence && read_time_ms - worker->previous_read_time_ms >= worker->setup.sample_timeout_ms;
@@ -70,6 +110,8 @@ static esp_err_t sensor_run_once(sensor_task_t *worker)
         .sequence = ++worker->sequence,
         .sample_time_ms = read_time_ms,
         .is_valid = is_valid,
+        .fire_read_valid = fire_read_valid,
+        .fire_detected = fire_detected,
         .value = filtered
     };
     worker->previous_read_time_ms = read_time_ms;

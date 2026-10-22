@@ -86,7 +86,7 @@ h2 {
 
 .chi-so {
     display:grid;
-    grid-template-columns:repeat(3,1fr);
+    grid-template-columns:repeat(4,1fr);
     gap:14px;
     margin:16px 0
 }
@@ -99,6 +99,26 @@ h2 {
 
 .chi-so strong {
     font-size:23px
+}
+
+.chi-so article.bao-dong-lua {
+    background:#712e2b;
+    border-color:#712e2b;
+    color:#fff
+}
+
+.chi-so article.bao-dong-lua p {
+    color:#f3cfcb
+}
+
+.chi-so article.bao-xac-nhan-lua {
+    background:#fff3cb;
+    border-color:#e5bd51
+}
+
+.chi-so article.bao-loi-lua {
+    background:#edf0ef;
+    border-color:#9aa8a5
 }
 
 .nut {
@@ -184,6 +204,7 @@ footer {
     }
 
     .chi-so {
+        grid-template-columns:repeat(2,1fr);
         gap:8px
     }
 

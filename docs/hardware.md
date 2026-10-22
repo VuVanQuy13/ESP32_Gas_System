@@ -33,6 +33,7 @@ Trạng thái: đã có thiết kế nối dây trong [wiring.md](wiring.md); ch
 | Nút Edit/Save | 32 | Input pull-up, nhấn nối GND |
 | Relay | 23 | Output active-high; LOW là OFF |
 | MQ-2 DO | Không nối | Dùng ngưỡng phần mềm trên AO |
+| Flame sensor D0 | GPIO4 mặc định | Input số; cực tính chọn trong menuconfig. Đảm bảo D0 tối đa 3,3 V khuyến nghị (không vượt absolute maximum ESP32) |
 
 - Tránh GPIO0/2/5/12/15 cho ngoại vi phiên bản đầu vì strapping; tránh GPIO6–11 vì flash; giữ GPIO1/3 cho nạp/log và GPIO12–15 cho JTAG. GPIO16/17 phụ thuộc module/PSRAM nên không cần chọn trong cấu hình này.
 - GPIO34–39 chỉ input, không có pull-up/pull-down nội; GPIO34 phù hợp ADC nhưng không dùng làm relay/I2C output.

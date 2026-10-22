@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define GAS_RECOVERY_REQUIRED_SAMPLES 3U
+#define FIRE_CLEAR_CONFIRMATION_MS 3000U
 
 static bool threshold_is_valid(const control_config *parameters, int value)
 {
@@ -48,6 +49,12 @@ static void evaluate_auto_mode(control_state *state, bool just_entered)
         return;
     }
 
+    /* D0 phat hien lua la dieu kien doc lap, ke ca MQ-2 chua Ready. */
+    if (state->fire_detected) {
+        state->relay_on = true;
+        return;
+    }
+
     if (just_entered || state->sensor_status != SENSOR_READY ||
         !state->configuration_valid) {
         state->relay_on = false;
@@ -62,14 +69,51 @@ static void evaluate_auto_mode(control_state *state, bool just_entered)
     }
 }
 
-static void set_notification(
+static void add_notification(
     control_result *result,
-    control_notification_type notification,
+    control_notification_flags notification,
     const control_state *state)
 {
-    result->notification = notification;
-    result->notification_sample = state->sample;
-    result->notification_threshold = state->threshold;
+    result->notifications |= notification;
+    if (notification & (CONTROL_NOTIFICATION_GAS_ALARM | CONTROL_NOTIFICATION_GAS_RECOVERY)) {
+        result->notification_sample = state->sample;
+        result->notification_threshold = state->threshold;
+    }
+}
+
+static void update_fire_state(
+    control_state *state,
+    const control_event *event,
+    control_result *result)
+{
+    if (!event->fire_read_valid) {
+        /* Loi D0 huy xac nhan het lua; loi khong chung minh lua da het. */
+        state->fire_read_valid = false;
+        state->fire_detected = false;
+        state->fire_clear_confirmation_active = false;
+        return;
+    }
+
+    state->fire_read_valid = true;
+    state->fire_detected = event->fire_detected;
+    if (state->fire_detected && !state->fire_notification_active) {
+        state->fire_clear_confirmation_active = false;
+        state->fire_notification_active = true;
+        add_notification(result, CONTROL_NOTIFICATION_FIRE_DETECTED, state);
+    } else if (state->fire_detected) {
+        /* Lua xuat hien lai trong luc cho xac nhan: huy bo dem. */
+        state->fire_clear_confirmation_active = false;
+    } else if (state->fire_notification_active) {
+        if (!state->fire_clear_confirmation_active) {
+            state->fire_clear_confirmation_active = true;
+            state->fire_clear_confirmation_start_ms = state->current_time_ms;
+        } else if (state->current_time_ms - state->fire_clear_confirmation_start_ms >=
+                   FIRE_CLEAR_CONFIRMATION_MS) {
+            state->fire_clear_confirmation_active = false;
+            state->fire_notification_active = false;
+            add_notification(result, CONTROL_NOTIFICATION_FIRE_CLEARED, state);
+        }
+    }
 }
 
 /* Cap nhat chot canh bao chi tu mau moi da hop le va Ready. */
@@ -85,7 +129,7 @@ static void evaluate_gas_alarm(control_state *state, control_result *result)
         state->consecutive_recovery_sample_count = 0;
         if (state->sample >= state->threshold) {
             state->gas_alarm_active = true;
-            set_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
+            add_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
         }
         return;
     }
@@ -103,7 +147,7 @@ static void evaluate_gas_alarm(control_state *state, control_result *result)
     if (state->consecutive_recovery_sample_count == GAS_RECOVERY_REQUIRED_SAMPLES) {
         state->gas_alarm_active = false;
         state->consecutive_recovery_sample_count = 0;
-        set_notification(result, CONTROL_NOTIFICATION_GAS_RECOVERY, state);
+        add_notification(result, CONTROL_NOTIFICATION_GAS_RECOVERY, state);
     }
 }
 
@@ -116,7 +160,7 @@ static void evaluate_saved_threshold(control_state *state, control_result *resul
         state->sensor_status == SENSOR_READY && !state->gas_alarm_active &&
         state->sample >= state->threshold) {
         state->gas_alarm_active = true;
-        set_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
+        add_notification(result, CONTROL_NOTIFICATION_GAS_ALARM, state);
     }
 }
 
@@ -164,6 +208,8 @@ static control_result_code accept_sample(
     }
     bool sample_gap =
         state->sample_sequence != 0 && event->sequence - state->sample_sequence != 1;
+    /* Chi ap dung D0 sau khi sequence/timestamp da duoc xac nhan moi. */
+    update_fire_state(state, event, result_event);
     state->sample_sequence = event->sequence;
     state->sample_time_ms = event->sample_time_ms;
     state->has_sample = true;
@@ -335,6 +381,10 @@ control_result_code control_process_event(
     result_event->sensor_status = state->sensor_status;
     result_event->edit_status = state->edit_status;
     result_event->save_result_unknown = state->save_result_unknown;
+    if (state->has_sample && state->sensor_status == SENSOR_READY) {
+        result_event->notification_sample = state->sample;
+        result_event->notification_threshold = state->threshold;
+    }
     return result_event->result_code;
 }
 

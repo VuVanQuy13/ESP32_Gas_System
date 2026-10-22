@@ -25,6 +25,16 @@ menu "MQ-2 va LCD"
         default y
 endmenu
 
+menu "Dieu khien"
+    config GAS_THRESHOLD_HYSTERESIS
+        int "Do tre nguong hysteresis MQ-2 (ADC tho)"
+        range 1 100
+        default 50
+        help
+            Dung chung cho moc tat relay Auto va moc hoi phuc canh bao gas Telegram.
+            Don vi la so dem ADC tho, khong phai ppm. Gioi han toi da 100 theo nguong gas toi thieu hien tai.
+endmenu
+
 menu "Chan GPIO - Gas System (ESP32 DevKit V1)"
     help
         So GPIO, khong phai vi tri header. Khong dung chan flash, UART0,
@@ -77,6 +87,20 @@ menu "Chan GPIO - Gas System (ESP32 DevKit V1)"
         default 32
         help
             Chi chon 4, 13, 14, 16..19, 21..23, 25..27, 32, 33.
+    config GAS_GPIO_FIRE_D0
+        int "GPIO FIRE_D0"
+        range 0 39
+        default 4
+        help
+            Dau vao so D0 cua module cam bien lua. Co the chon GPIO34..39 vi day la chan input-only.
+endmenu
+
+menu "Cam bien lua"
+    config GAS_FIRE_D0_ACTIVE_LOW
+        bool "D0 muc LOW khi phat hien lua"
+        default y
+        help
+            Mac dinh phan lon module digital bao lua bang muc LOW. Tat neu module cua ban bao lua bang muc HIGH.
 endmenu
 
 

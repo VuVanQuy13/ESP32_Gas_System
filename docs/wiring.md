@@ -2,7 +2,7 @@
 
 Trạng thái: thiết kế để lắp và kiểm tra; chưa đo trên board. Áp dụng ESP32-DevKit V1 dùng ESP32 classic. Số chân dưới đây là GPIO, không phải vị trí header.
 
-Các số GPIO trong sơ đồ là mặc định. Từ 27/09/2026 có thể đổi tám chân bằng [menuconfig](gpio-menuconfig.md); nếu đổi, nối dây theo cấu hình mới và kiểm tra log GPIO lúc boot.
+Các số GPIO trong sơ đồ là mặc định. Từ 27/09/2026 có thể đổi chín chân bằng [menuconfig](gpio-menuconfig.md); nếu đổi, nối dây theo cấu hình mới và kiểm tra log GPIO lúc boot.
 
 Cập nhật phần mềm 26/09/2026: firmware đã tích hợp các module, debounce 30 ms và tùy chọn dò địa chỉ PCF8574/A. Dùng [flash-guide.md](flash-guide.md) để build/nạp và thử; các câu hướng tới bước triển khai bên dưới là lịch sử thiết kế, không có nghĩa còn thiếu driver.
 
@@ -32,6 +32,12 @@ Phương án thử trên bàn: ESP32 nhận nguồn từ USB; module MQ-2 và LC
 | Tín hiệu relay | GPIO23, HIGH bật / LOW tắt |
 
 Module relay được coi là đầu nhận logic theo phạm vi người dùng đã chốt. Không bổ sung thiết kế mạch kích cuộn dây hoặc yêu cầu xác minh model trong tài liệu này; sơ đồ không yêu cầu GPIO cấp dòng trực tiếp cho cuộn dây.
+
+## Cảm biến phát hiện lửa D0
+
+Nối chân D0 của module cảm biến lửa tới GPIO4 mặc định (hoặc GPIO_FIRE_D0 đã chọn trong menuconfig), VCC theo thông số module và GND chung với ESP32. Chọn cực tính trong `Gas_System` → `Cam bien lua`: mặc định D0 LOW nghĩa là phát hiện lửa.
+
+**Kiểm tra điện áp trước khi nối:** ESP32 dùng mức logic 3,3 V. Đo mức HIGH của chân D0 so với GND; không nối trực tiếp nếu D0 có thể lên 5 V. Dùng bộ chia áp hoặc bộ chuyển mức phù hợp để giữ D0 không quá 3,3 V khuyến nghị. Firmware chỉ đọc và log trạng thái D0; module này hiện không làm đổi relay.
 
 ## 2. MQ-2 AO và GPIO34
 

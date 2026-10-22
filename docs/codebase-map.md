@@ -1,5 +1,28 @@
 # Codebase map
 
+## Web flame-status card (2026-10-22)
+
+- `web_gateway.c` serializes three D0 fields in WebSocket state protocol version 2: `fire_valid`, `fire`, and `fire_confirming`. `web/app.js` validates all three and renders a fourth `Trạng thái lửa` card. The CSS uses red for detected fire, yellow while confirming clear, gray for unavailable D0, and normal styling for no fire. The browser only consumes snapshots; it cannot change fire, relay or Telegram state.
+
+## LCD D0 status suffix (2026-10-22)
+
+- `control_state.fire_read_valid` records whether the latest D0 read was valid. `display_task/display_task.c` reserves the last three cells of LCD line two for `F:1` (valid/fire), `F:0` (valid/no fire), or `F:?` (D0 unknown/error). It truncates the preceding line-two message to 13 cells to preserve that suffix. This is presentation state only; the control core remains the owner of relay and notification decisions.
+
+## Fire-clear confirmation and Telegram retention (2026-10-22)
+
+- `components/control_core/control_core.c` requires 3000 ms of valid continuous D0 no-fire readings after a fire alert before emitting `CONTROL_NOTIFICATION_FIRE_CLEARED`. A valid renewed fire reading or D0 read error cancels the timer. The relay still responds immediately to valid D0 state; the three seconds delays only the clear notification.
+- `components/telegram_notify/telegram_notify_pending.c` owns a one-event holding slot. When HTTPS is busy, an event containing `FIRE_CLEARED` is retained. The worker sends it when its current request completes. A subsequent `FIRE_DETECTED` cancels a held clear event. It does not create an unbounded queue or block control/task execution; other busy events are still dropped.
+- Regression coverage: `control_core/test/test_control_core_fire_relay.c` checks exact 3-second boundary and D0-error reset; `telegram_notify/test/test_telegram_notify_format.c` checks retain/take/cancel behavior through the pure pending helper. Both passed GCC C11. Firmware build passed with Telegram enabled in the user workspace; it was not flashed.
+
+## Current gas, flame, relay and Telegram behavior (2026-10-20)
+
+- `main/Kconfig.projbuild` adds `Gas_System -> Dieu khien -> Do tre nguong hysteresis MQ-2 (ADC tho)`, range 1..100 and default 50. `main/Gas_System.c` passes it into the control core. It controls Auto gas relay turn-off and Telegram gas recovery boundary; values are raw ADC counts, not ppm. The core requires hysteresis <= minimum allowed gas threshold (100), so the menu's upper bound preserves config validation.
+- `components/app_tasks/sensor_task/sensor_task.c` reads flame D0 alongside MQ-2 at its existing sample cadence and marks the digital reading valid/invalid. `components/control_core/control_core.c` evaluates valid flame before MQ-2 readiness in Auto, so active flame forces relay ON. Manual output continues to follow button/web commands.
+- D0 read error is logged and is treated as no active fire for relay decisions, but it does not generate a Telegram clear transition. A valid D0 no-flame reading confirms clear. When fire clears, Auto immediately reevaluates gas hysteresis; Manual holds its chosen relay state.
+- Core result notification flags can combine gas alarm/recovery and fire detected/cleared in one event. `control_task.c` submits one combined event without blocking on HTTP. `telegram_notify_format.c` creates one line per transition. The worker keeps one attempt and drops offline, busy or failed sends without retry/deferred delivery.
+- Host regression tests live in `components/control_core/test/test_control_core_fire_relay.c` and `components/telegram_notify/test/test_telegram_notify_format.c`; they are compiled standalone with host GCC, not included in firmware CMake. ESP-IDF 5.5.4 build passed in temporary copies with Telegram on/off. No physical board or actual Bot delivery tested.
+- `sdkconfig.defaults` now uses the large single-app partition so both configurations fit (enabled binary 0xa15b0; app partition 0x177000). Existing `Gas_System/build` artifacts were not used by verification.
+
 ## Telegram bot notification integration (2026-10-17)
 
 - Current source boundary: `main/Gas_System.c` starts the control service and later starts `network_start()` and `web_start()`. `components/app_tasks/control_task/control_task.c` serializes button, web and sensor events. `components/control_core/control_core.c` owns the pure state machine and Auto relay hysteresis. Wi-Fi `IP_EVENT_STA_GOT_IP` only confirms a local IP address, not Telegram reachability.
@@ -257,3 +280,25 @@ User has no board. Implement and explain one module at a time using fake hardwar
 - User confirmed the switched load is a discrete LED/resistor powered by 3.3 V and the relay is active-high (HIGH on, LOW off). Electrical compatibility remains unmeasured.
 - Installed ESP-IDF version, wiring, pin allocation and relay interface remain unverified.
 - This document describes existing files, not a proposed architecture or implementation plan.
+
+
+## Flame sensor D0 (2026-10-20)
+
+- `Gas_System/components/drivers/flame_d0/`: GPIO input driver and polarity conversion helper. Pin defaults to GPIO4; polarity configurable in menuconfig.
+- `sensor_task` reads D0 on its existing periodic loop and emits transition/error logs. This is monitor-only and has no connection to relay or notification policy.
+
+The standalone flame D0 host-test source was removed at the user request; the production logic header remains included by the driver.
+
+
+## Planned flame-to-relay policy (2026-10-20; not implemented)
+
+- `sensor_task` currently reads/logs D0; `control_core` currently decides Auto relay from MQ-2 only; `control_task` is the sole relay writer. Planned integration must send flame state through the control owner and preserve Manual authority.
+- Approved Auto rule combines the existing MQ-2 hysteresis output with flame detection as OR; the user can manually switch relay OFF in Manual. D0 read failure is logged and treated as flame absent.
+- Resolved: user selected A; valid flame detection alone can turn relay ON in Auto despite MQ-2 warmup/error or missing threshold. D0 read failure is treated as flame absent, leaving current MQ-2 gates in force. Implementation remains pending user approval to start coding.
+
+
+## Planned Telegram flame alerts and menuconfig hysteresis (2026-10-20; not implemented)
+
+- Extend the existing control transition reporting and Telegram event formatting for fire and fire-clear in Auto and Manual. Coalesce gas+fire transitions from one core event into one message; retain current one-attempt/drop policy for offline, busy, or failed delivery.
+- Add a shared raw-ADC hysteresis menuconfig setting (default 50, proposed range 1..100) used by both Auto relay release and gas Telegram recovery. D0 transitions remain immediate at current sensor sampling cadence without debounce.
+- Requirements agreed; implementation is pending an explicit request to start coding.

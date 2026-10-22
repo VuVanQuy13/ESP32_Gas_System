@@ -216,10 +216,11 @@ esp_err_t web_tao_ban_tin(const control_snapshot *snapshot, uint64_t now, char *
     format_hex(state->save_id, hex[5]);
     int written = snprintf(out,
         length,
-        "{\"type\":\"state\",\"v\":1,\"boot\":\"%s\",\"seq\":\"%s\",\"control\":\"%"
+        "{\"type\":\"state\",\"v\":2,\"boot\":\"%s\",\"seq\":\"%s\",\"control\":\"%"
         "s\",\"edit\":\"%s\",\"revision\":\"%s\",\"save_id\":\"%s\",\"mode\":%d,"
         "\"sensor\":%d,\"relay\":%d,\"relay_error\":%d,\"save_error\":%d,"
         "\"threshold\":%d,\"draft\":%d,\"editing\":%d,\"unknown\":%d,\"config\":%d,"
+        "\"fire_valid\":%d,\"fire\":%d,\"fire_confirming\":%d,"
         "\"value\":%s,\"stale\":%d,"
         "\"minimum\":%d,\"maximum\":%d,\"step\":10}",
         hex[0],
@@ -238,6 +239,9 @@ esp_err_t web_tao_ban_tin(const control_snapshot *snapshot, uint64_t now, char *
         state->edit_status,
         state->save_result_unknown,
         state->configuration_valid,
+        state->fire_read_valid,
+        state->fire_detected,
+        state->fire_clear_confirmation_active,
         value,
         cu,
         state->config.minimum_threshold,

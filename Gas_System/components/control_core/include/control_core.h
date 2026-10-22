@@ -51,11 +51,14 @@ typedef enum {
 } control_result_code;
 
 /* Su kien can bao do control_task xu ly; core chi quyet dinh chinh sach. */
-typedef enum {
-    CONTROL_NOTIFICATION_NONE,
-    CONTROL_NOTIFICATION_GAS_ALARM,
-    CONTROL_NOTIFICATION_GAS_RECOVERY
-} control_notification_type;
+typedef uint32_t control_notification_flags;
+enum {
+    CONTROL_NOTIFICATION_NONE = 0,
+    CONTROL_NOTIFICATION_GAS_ALARM = 1U << 0,
+    CONTROL_NOTIFICATION_GAS_RECOVERY = 1U << 1,
+    CONTROL_NOTIFICATION_FIRE_DETECTED = 1U << 2,
+    CONTROL_NOTIFICATION_FIRE_CLEARED = 1U << 3
+};
 
 /* Các giá trị chính sách được main truyền vào một lần khi khởi động. */
 typedef struct {
@@ -70,6 +73,8 @@ typedef struct {
     uint64_t boot_id;              /* Sự kiện phải thuộc lần khởi động này. */
     uint64_t sequence, sample_time_ms; /* Thời điểm lấy mẫu, không phải lúc nhận. */
     bool is_valid;                        /* Đọc và kiểm tra chất lượng mẫu thành công. */
+    bool fire_read_valid;                 /* Cho biet D0 doc thanh cong; loi khong phai la xac nhan het lua. */
+    bool fire_detected;                   /* Trang thai D0 khi fire_read_valid=true. */
     int value;                        /* Mẫu thô, bản nháp, chế độ hoặc relay 0/1. */
     uint64_t edit_session_id, expected_revision, save_id;
 } control_event;
@@ -82,12 +87,15 @@ typedef struct {
     control_mode mode;
     sensor_status sensor_status;
     edit_status edit_status;
-    bool relay_on, configuration_valid, has_sample;
+    bool relay_on, configuration_valid, has_sample, fire_read_valid, fire_detected,
+        fire_notification_active;
+    bool fire_clear_confirmation_active;
     int threshold, sample, draft;
     uint32_t consecutive_sample_count;
     bool gas_alarm_active; /* Da phat canh bao, chua xac nhan du dieu kien hoi phuc. */
     uint32_t consecutive_recovery_sample_count; /* So mau hop le lien tiep duoi ranh gioi hoi phuc. */
     uint64_t sample_sequence, sample_time_ms;
+    uint64_t fire_clear_confirmation_start_ms;
     uint64_t edit_session_id, draft_revision, last_edit_time_ms;
     uint64_t save_id, save_start_time_ms;
     bool save_result_unknown;
@@ -103,7 +111,7 @@ typedef struct {
     bool needs_save;
     int threshold_to_save;
     uint64_t save_id;
-    control_notification_type notification; /* Chuyen trang thai de task phat log/gui Telegram. */
+    control_notification_flags notifications; /* Co the co nhieu chuyen trang thai trong cung mot su kien. */
     int notification_sample, notification_threshold;
     control_mode mode;
     sensor_status sensor_status;

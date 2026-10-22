@@ -72,10 +72,11 @@ idf.py menuconfig
 Trong menu `Gas_System`:
 
 1. Mở `Wi-Fi`, nhập SSID và mật khẩu của mạng có Internet nếu chưa cấu hình.
-2. Mở `Telegram Bot`.
-3. Bật `Bat thong bao Telegram`.
-4. Nhập token vào `Bot token` và số vào `Chat ID nhan tin`.
-5. Lưu cấu hình rồi thoát menuconfig.
+2. Trong menu `Dieu khien`, chỉnh `Do tre nguong hysteresis MQ-2 (ADC tho)` nếu cần. Mặc định 50, giới hạn 1–100 ADC count. Giá trị này dùng chung cho ngưỡng tắt relay Auto và ngưỡng hồi phục cảnh báo gas Telegram. Ví dụ ngưỡng 600, hysteresis 50: relay có thể tắt ở ADC ≤ 550; cảnh báo gas hồi phục sau ba mẫu hợp lệ liên tiếp ≤ 550. Đây là ADC thô, không phải ppm.
+3. Mở `Telegram Bot`.
+4. Bật `Bat thong bao Telegram`.
+5. Nhập token vào `Bot token` và số vào `Chat ID nhan tin`.
+6. Lưu cấu hình rồi thoát menuconfig.
 
 Sau đó build và nạp firmware:
 
@@ -96,7 +97,7 @@ Khi khởi động, tìm các log sau:
 
 Log worker sẵn sàng chỉ xác nhận task và cấu hình khởi tạo được; nó không kiểm tra Internet hay xác nhận Telegram đã nhận tin.
 
-Telegram chỉ gửi sau khi MQ-2 đạt trạng thái Ready và control core phát sinh chuyển trạng thái cảnh báo hoặc hồi phục. Điều kiện cảnh báo là ADC thô lớn hơn hoặc bằng ngưỡng hiệu lực. Điều kiện hồi phục là ba mẫu hợp lệ liên tiếp không lớn hơn `ngưỡng - 50`. Hai loại thông báo áp dụng ở cả Auto và Manual. Giá trị gửi đi là ADC thô, không phải ppm.
+Telegram gửi khi control core phát hiện chuyển trạng thái. Cảnh báo gas cần MQ-2 Ready và ADC thô lớn hơn hoặc bằng ngưỡng hiệu lực. Hồi phục gas cần ba mẫu hợp lệ liên tiếp không lớn hơn `ngưỡng - hysteresis`. Cảnh báo lửa dựa trên D0 hợp lệ và gửi cả ở Auto lẫn Manual. Tin hết lửa chỉ gửi khi D0 báo không có lửa liên tục đủ 3 giây sau một cảnh báo lửa; D0 báo lửa lại hoặc lỗi đọc D0 sẽ hủy khoảng xác nhận này. Relay Auto vẫn thay đổi ngay khi D0 hợp lệ đổi trạng thái, không chờ 3 giây. Nếu Telegram vẫn đang gửi tin trước đó, firmware giữ một event hết lửa và gửi nó ngay sau request đang chạy; event phát hiện lửa mới hủy event hết lửa đang giữ. Nếu cùng một sự kiện control phát hiện chuyển trạng thái gas và lửa, chúng được gộp thành một tin nhắn. Giá trị gas trong tin nhắn là ADC thô, không phải ppm.
 
 Khi có chuyển trạng thái, monitor lần lượt có thể hiển thị:
 
