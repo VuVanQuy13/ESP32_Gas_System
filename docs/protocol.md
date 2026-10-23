@@ -1,8 +1,8 @@
-# Đồng bộ web/phần cứng — giao thức v1 đã triển khai
+# Đồng bộ web/phần cứng — command v1 và state snapshot v2 đã triển khai
 
-## Hợp đồng hiện tại (26/09/2026)
+## Hợp đồng hiện tại (22/10/2026)
 
-Phần này thay thế đề xuất lịch sử phía dưới. HTTP phục vụ `/`, `/app.js`, `/style.css`; WebSocket `/ws` truyền JSON text không phân mảnh. Tối đa 3 client, mỗi lệnh không quá 384 byte. Kiểm tra Origin cùng Host; chưa có xác thực/TLS, chỉ dành cho LAN tin cậy.
+Phần này thay thế đề xuất lịch sử phía dưới. HTTP phục vụ `/`, `/app.js`, `/style.css`; WebSocket `/ws` truyền JSON text không phân mảnh. Lệnh client dùng schema v1; snapshot trạng thái ESP32 dùng schema v2 để bổ sung trạng thái cảm biến lửa. Tối đa 3 client, mỗi lệnh không quá 384 byte. Kiểm tra Origin cùng Host; chưa có xác thực/TLS, chỉ dành cho LAN tin cậy.
 
 Lệnh là object phẳng gồm `v:1`, `id` nguyên 1..2147483647, `type`, `boot`, cộng đúng các trường trong bảng. Không nhận khóa thừa/trùng, object/array lồng hoặc chuỗi escape. `boot`, `control`, `edit`, `revision` là chuỗi đúng 16 chữ số hex thường; không truyền uint64 bằng Number JavaScript.
 
@@ -28,12 +28,13 @@ PENDING chỉ xác nhận đã yêu cầu lưu. Không có ACK SAVED riêng: the
 
 Mỗi socket giữ đúng lệnh gần nhất và phản hồi gần nhất: cùng id và JSON giống từng byte trả cache; cùng id nhưng khác byte trả ID_CONFLICT; id thấp hơn trả OLD_ID; khi còn lệnh chờ thì id mới trả BUSY. Cache bị xóa khi reconnect; không hứa exactly-once qua disconnect/reset. UI không tự retry lệnh sau reconnect.
 
-Snapshot `type:"state"`, `v:1` gồm:
+Snapshot `type:"state"`, `v:2` gồm:
 
 - Chuỗi hex: boot, seq (thứ tự snapshot), control, edit, revision, save_id.
 - mode (0 Auto/1 Manual), sensor (0 chờ/1 sẵn sàng/2 lỗi), relay, relay_error, save_error.
 - threshold, draft, editing (0 không chỉnh/1 chỉnh/2 đang lưu), unknown, config.
 - value (ADC hoặc null), stale, minimum, maximum, step=10.
+- `fire_valid`, `fire`, `fire_confirming`: lần lượt cho biết kết quả D0 có hợp lệ không, có phát hiện lửa không, và đang chờ đủ 3 giây mẫu hợp lệ báo hết lửa để gửi thông báo Telegram hay không.
 
 Không công bố ppm. Mẫu chưa sẵn sàng/cũ hoặc snapshot cũ trả value=null; UI không kết luận an toàn từ lỗi. UI bỏ snapshot seq thấp hơn trong cùng boot; đổi boot thì bỏ cache cũ. Bản nháp chỉ chính thức sau snapshot ESP32; xung đột lúc kéo slider hủy phần xem trước.
 

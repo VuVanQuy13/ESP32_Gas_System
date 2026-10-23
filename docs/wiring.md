@@ -37,7 +37,7 @@ Module relay được coi là đầu nhận logic theo phạm vi người dùng 
 
 Nối chân D0 của module cảm biến lửa tới GPIO4 mặc định (hoặc GPIO_FIRE_D0 đã chọn trong menuconfig), VCC theo thông số module và GND chung với ESP32. Chọn cực tính trong `Gas_System` → `Cam bien lua`: mặc định D0 LOW nghĩa là phát hiện lửa.
 
-**Kiểm tra điện áp trước khi nối:** ESP32 dùng mức logic 3,3 V. Đo mức HIGH của chân D0 so với GND; không nối trực tiếp nếu D0 có thể lên 5 V. Dùng bộ chia áp hoặc bộ chuyển mức phù hợp để giữ D0 không quá 3,3 V khuyến nghị. Firmware chỉ đọc và log trạng thái D0; module này hiện không làm đổi relay.
+**Kiểm tra điện áp trước khi nối:** ESP32 dùng mức logic 3,3 V. Đo mức HIGH của chân D0 so với GND; không nối trực tiếp nếu D0 có thể lên 5 V. Dùng bộ chia áp hoặc bộ chuyển mức phù hợp để giữ D0 không quá 3,3 V khuyến nghị. Ở chế độ Auto, D0 hợp lệ báo có lửa yêu cầu relay bật; khi D0 hợp lệ báo hết lửa, firmware lập tức trở lại luật điều khiển gas. Ở Manual, D0 không ghi đè relay. Cảnh báo Telegram theo dõi độc lập với mode; thông báo hết lửa cần 3 giây liên tục có mẫu D0 hợp lệ báo không lửa. Lỗi đọc D0 không được xem là xác nhận hết lửa.
 
 ## 2. MQ-2 AO và GPIO34
 

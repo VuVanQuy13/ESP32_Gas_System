@@ -1,5 +1,11 @@
 # Project context
 
+## README/source synchronization (2026-10-22)
+
+- Root `README.md` was refreshed against current firmware for features, GPIO wiring, source architecture, peripherals/protocols, control techniques, build setup, and validation limits. It explicitly states that MQ-2 values are raw ADC counts despite the current `ppm` labels in web/Telegram output.
+- Corrected the wiring guide's stale statement that D0 cannot affect relay, and updated the web protocol guide to distinguish command schema v1 from state snapshot schema v2, including fire fields.
+- Documentation review only: no firmware changed and no build/tests run. Claims are based on current source/configuration; physical wiring, sensor calibration, and board behavior remain unverified.
+
 ## Web flame-status card (2026-10-22)
 
 - User selected a fourth web status card. WebSocket state protocol is now version 2 and sends `fire_valid`, `fire`, and `fire_confirming`. The browser shows: `Phat hien lua` in red for a valid active fire; `Dang xac nhan het` in yellow while the 3-second valid no-fire period runs; `Khong phat hien` when valid D0 reports no fire; `Khong doc duoc D0` in gray for invalid D0; and `Chua dong bo` before a fresh WebSocket state. This is display-only and does not add a network connection or alter relay/Telegram policy.
