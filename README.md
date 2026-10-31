@@ -136,3 +136,17 @@ Chưa xác nhận trên mạch thật: điện áp AO/D0, hiệu chuẩn hoặc 
 - [LCD](docs/display-guide.md)
 - [NVS](docs/storage-guide.md)
 - [Wi-Fi và web](docs/web-guide.md)
+
+## Hình ảnh sản phẩm
+
+### Giao diện Web
+
+![Giao diện Web](docs/images/web.png)
+
+### Tin nhắn Telegram
+
+![Tin nhắn Telegram](docs/images/telegram.png)
+
+### Sản phẩm thực tế
+
+![Sản phẩm thực tế](docs/images/product.jpg)
