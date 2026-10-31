@@ -1,70 +1,69 @@
-# Hệ thống giám sát khí gas bằng ESP32
+# ESP32 Gas Monitoring System
 
-## 1. Giới thiệu project và tính năng
+## 1. Project overview and features
 
-Đây là project firmware sử dụng ESP-IDF cho board ESP32-DevKit V1. Hệ thống đọc cảm biến khí gas MQ-2 và cảm biến lửa dạng số, điều khiển relay, hiển thị trạng thái trên LCD1602 giao tiếp I2C, cung cấp giao diện web trong mạng Wi-Fi nội bộ và có thể gửi cảnh báo qua Telegram Bot.
+This is an ESP-IDF firmware project for the ESP32-DevKit V1. The system reads the MQ-2 gas sensor and a digital flame sensor, controls a relay, displays the status on an I2C LCD1602, provides a web interface on the local Wi-Fi network, and can send alerts through a Telegram Bot.
 
-### Tính năng chính
+### Main features
 
-- Đọc ngõ ra analog AO của MQ-2 bằng ADC1 của ESP32.
-- Lọc tối đa bốn mẫu ADC và loại bỏ mẫu không hợp lệ, quá cũ hoặc bị timeout.
-- Giá trị MQ-2 hiện là số đếm ADC thô từ `0` đến `4095`, chưa chuyển đổi thành ppm đã hiệu chuẩn.
-- Có hai chế độ điều khiển relay: Auto và Manual.
-- Dùng hysteresis để giảm hiện tượng relay đóng/ngắt liên tục quanh ngưỡng gas.
-- Khi ở Auto, nếu phát hiện lửa hợp lệ thì relay được yêu cầu bật.
-- Khi ở Manual, relay chỉ được điều khiển bằng nút cứng hoặc lệnh từ web.
-- Có bốn nút active-low: bật relay, tắt relay, chuyển Auto/Manual và chỉnh/lưu ngưỡng.
-- Web và nút cứng cùng sử dụng một bản nháp ngưỡng trên ESP32.
-- Lưu ngưỡng hiệu lực vào bộ nhớ NVS của ESP32.
-- LCD hiển thị chế độ, relay, trạng thái gas, ngưỡng, trạng thái chỉnh sửa và trạng thái lửa.
-- Có web dashboard dùng HTTP và WebSocket trong cùng mạng Wi-Fi.
-- Có thể gửi cảnh báo gas và lửa qua Telegram bằng HTTPS.
-- Ghi log trạng thái khởi động, cảm biến, nút, relay, mạng, lưu trữ, web và Telegram ra serial monitor.
+- Reads the MQ-2 analog AO output through the ESP32 ADC1.
+- Filters up to four ADC samples and rejects invalid, stale, or timed-out samples.
+- The current MQ-2 value is a raw ADC count from `0` to `4095`; it is not converted to calibrated ppm.
+- Provides two relay control modes: Auto and Manual.
+- Uses hysteresis to reduce relay switching around the gas threshold.
+- In Auto mode, a valid flame detection requests the relay to turn on.
+- In Manual mode, the relay is controlled only by physical buttons or web commands.
+- Provides four active-low buttons: relay ON, relay OFF, Auto/Manual mode, and threshold edit/save.
+- The web interface and physical buttons use the same threshold draft on the ESP32.
+- Saves the effective threshold in ESP32 NVS storage.
+- Displays the mode, relay, gas status, threshold, edit status, and flame status on the LCD.
+- Provides a web dashboard using HTTP and WebSocket on the same Wi-Fi network.
+- Can send gas and flame alerts through Telegram over HTTPS.
+- Logs startup, sensor, button, relay, network, storage, web, and Telegram events to the serial monitor.
 
-### Logic hoạt động
+### Runtime behavior
 
-Trong chế độ Auto, trạng thái lửa hợp lệ được ưu tiên. Nếu không có lửa, relay hoạt động theo hysteresis của MQ-2: bật khi ADC lớn hơn hoặc bằng ngưỡng và tắt khi ADC nhỏ hơn hoặc bằng `ngưỡng - hysteresis`. Dữ liệu MQ-2 không hợp lệ hoặc quá hạn sẽ không tạo yêu cầu bật relay theo gas.
+In Auto mode, a valid flame state has priority. If there is no flame, the relay follows the MQ-2 hysteresis policy: it turns on when the ADC value is greater than or equal to the threshold and turns off when the ADC value is less than or equal to `threshold - hysteresis`. Invalid or stale MQ-2 data does not create a gas-based relay ON request.
 
-Trong chế độ Manual, relay thực hiện theo lệnh bật/tắt từ nút cứng hoặc web. Hệ thống vẫn theo dõi gas và lửa để tạo cảnh báo Telegram, nhưng các cảnh báo này không tự thay đổi relay Manual.
+In Manual mode, the relay follows ON/OFF commands from the physical buttons or the web interface. The system still monitors gas and flame transitions for Telegram alerts, but these alerts do not change the Manual relay state automatically.
 
-Thông báo xác nhận hết lửa chỉ được gửi sau khi D0 báo không có lửa liên tục trong ba giây. Khoảng thời gian này chỉ trì hoãn thông báo, không trì hoãn phản ứng relay trong Auto.
+The flame-clear confirmation message is sent only after D0 reports no flame continuously for three seconds. This period delays the notification only; it does not delay the Auto relay response.
 
-## 2. Hardware và firmware
+## 2. Hardware and firmware
 
 ### Hardware
 
-| Thiết bị | Kết nối mặc định với ESP32 | Ghi chú |
+| Device | Default ESP32 connection | Notes |
 |---|---|---|
-| ESP32-DevKit V1 | ESP32 classic | Các số GPIO là số GPIO của MCU. |
-| MQ-2 AO | GPIO34 / ADC1_CH6 | Đọc ADC 12-bit thô. Điện áp vào ADC phải nằm trong giới hạn của ESP32. |
-| Cảm biến lửa D0 | GPIO4 | Mặc định active-low; có thể đổi cực tính trong menuconfig. |
-| LCD1602 với backpack PCF8574 | SDA GPIO21, SCL GPIO22 | I2C 100 kHz, địa chỉ mặc định `0x27`. |
-| Ngõ vào relay | GPIO23 | Active-high: HIGH yêu cầu bật, LOW yêu cầu tắt. |
-| Nút ON/+ | GPIO25 | Active-low, dùng pull-up nội bộ ESP32. |
-| Nút OFF/- | GPIO26 | Active-low, dùng pull-up nội bộ ESP32. |
-| Nút Auto/Manual | GPIO27 | Active-low, dùng pull-up nội bộ ESP32. |
-| Nút Edit/Save | GPIO32 | Active-low, dùng pull-up nội bộ ESP32. |
+| ESP32-DevKit V1 | ESP32 classic | GPIO numbers refer to MCU GPIOs. |
+| MQ-2 AO | GPIO34 / ADC1_CH6 | Raw 12-bit ADC input. The ADC voltage must stay within the ESP32 limits. |
+| Flame sensor D0 | GPIO4 | Active-low by default; polarity can be changed in menuconfig. |
+| LCD1602 with PCF8574 backpack | SDA GPIO21, SCL GPIO22 | 100 kHz I2C, default address `0x27`. |
+| Relay input | GPIO23 | Active-high: HIGH requests ON, LOW requests OFF. |
+| ON/+ button | GPIO25 | Active-low, using the ESP32 internal pull-up. |
+| OFF/- button | GPIO26 | Active-low, using the ESP32 internal pull-up. |
+| Auto/Manual button | GPIO27 | Active-low, using the ESP32 internal pull-up. |
+| Edit/Save button | GPIO32 | Active-low, using the ESP32 internal pull-up. |
 
-Backpack LCD đã nối sẵn các chân điều khiển LCD với PCF8574. Driver hiện giả định P0=RS, P1=RW, P2=E, P3=backlight và P4..P7=D4..D7. Đây là các đường nối bên trong backpack, không phải các GPIO bổ sung của ESP32.
+The LCD backpack already connects the LCD control lines to the PCF8574. The driver currently assumes P0=RS, P1=RW, P2=E, P3=backlight, and P4..P7=D4..D7. These are internal backpack connections, not additional ESP32 GPIO connections.
 
-
-### Cấu trúc firmware
+### Firmware structure
 
 ```text
 MQ-2 ADC + flame D0 ─┐
-Nút cứng ────────────┼─> các task ─> control_task ─> control_core
-Lệnh WebSocket ──────┘                         ├─> GPIO relay
-                                               ├─> snapshot LCD
-                                               ├─> snapshot web
+Physical buttons ────┼─> tasks ─> control_task ─> control_core
+WebSocket commands ──┘                         ├─> relay GPIO
+                                               ├─> LCD snapshot
+                                               ├─> web snapshot
                                                ├─> storage_task -> NVS
                                                └─> Telegram worker
 ```
 
-Điểm bắt đầu chương trình là `Gas_System/main/Gas_System.c`. File này đọc cấu hình menuconfig, khởi tạo driver phần cứng và NVS, tạo các FreeRTOS task, khởi động Wi-Fi và khởi động web service.
+The program entry point is `Gas_System/main/Gas_System.c`. This file loads the menuconfig settings, initializes the hardware drivers and NVS, creates the FreeRTOS tasks, starts Wi-Fi, and starts the web service.
 
-### Build và cấu hình
+### Build and configuration
 
-Mở terminal ESP-IDF 5.5.4 tại thư mục `Gas_System`:
+Open an ESP-IDF 5.5.4 terminal in the `Gas_System` directory:
 
 ```powershell
 idf.py set-target esp32
@@ -73,55 +72,53 @@ idf.py build
 idf.py -p COMx flash monitor
 ```
 
-Trong menu **Gas_System** của menuconfig có thời gian ổn định MQ-2, cấu hình LCD, hysteresis ADC thô, toàn bộ GPIO, cực tính cảm biến lửa, Wi-Fi, web và Telegram. Sau khi Wi-Fi nhận IP, monitor sẽ in URL dạng `http://<device-ip>` để truy cập web.
+The **Gas_System** menu in menuconfig contains the MQ-2 warm-up time, LCD configuration, raw ADC hysteresis, all GPIO assignments, flame sensor polarity, Wi-Fi, web, and Telegram settings. After Wi-Fi obtains an IP address, the monitor prints a URL such as `http://<device-ip>` for web access.
 
-## 3. Kiến thức Embedded đã sử dụng
+## 3. Embedded knowledge used in the project
 
-### Ngoại vi của MCU
+### MCU peripherals
 
-- **ADC1 oneshot:** đọc AO của MQ-2 với độ phân giải 12-bit và cấu hình attenuation.
-- **GPIO input/output:** đọc nút, đọc D0 cảm biến lửa và điều khiển relay.
-- **GPIO interrupt:** ngắt nút và D0 chỉ đánh thức task; ISR không thực hiện xử lý phức tạp.
-- **I2C master:** giao tiếp với backpack PCF8574 của LCD ở tốc độ 100 kHz.
-- **UART0:** dùng cho serial monitor và log runtime.
-- **Non-volatile storage:** NVS lưu ngưỡng sau khi ESP32 reset hoặc mất nguồn.
+- **ADC1 oneshot:** reads the MQ-2 AO signal with 12-bit resolution and attenuation configuration.
+- **GPIO input/output:** reads the buttons and flame D0, and controls the relay.
+- **GPIO interrupts:** button and D0 interrupts only wake their tasks; the ISR does not perform complex processing.
+- **I2C master:** communicates with the LCD PCF8574 backpack at 100 kHz.
+- **UART0:** used for the serial monitor and runtime logging.
+- **Non-volatile storage:** NVS keeps the threshold after an ESP32 reset or power loss.
 
-### RTOS và đồng bộ dữ liệu
+### RTOS and data synchronization
 
-- FreeRTOS task tách riêng việc đọc cảm biến, đọc nút, điều khiển, hiển thị, lưu trữ, mạng và thông báo.
-- Queue giới hạn dùng để truyền event giữa các producer và control task.
-- Task notification đánh thức task hiệu quả từ GPIO ISR.
-- Mô hình single-owner giúp tránh race condition trên relay, mode, ngưỡng và trạng thái cảnh báo.
-- LCD và web đọc snapshot, không tự sửa state điều khiển.
-- HTTP/Telegram chạy ngoài đường quyết định relay nên mạng chậm không chặn control task.
+- FreeRTOS tasks separate sensor reading, button reading, control, display, storage, networking, and notification work.
+- Bounded queues transfer events between producers and the control task.
+- Task notifications efficiently wake tasks from GPIO ISRs.
+- The single-owner model prevents race conditions on the relay, mode, threshold, and alert state.
+- LCD and web code read snapshots and do not modify the control state directly.
+- HTTP and Telegram work runs outside the relay decision path, so slow network operations do not block the control task.
 
-### Kỹ thuật lập trình Embedded
+### Embedded programming techniques
 
-- State machine hướng event với các trạng thái Auto/Manual, cảm biến, chỉnh sửa, lưu và cảnh báo.
-- Hysteresis để giảm relay chattering gần ngưỡng gas.
-- Debounce nút và xử lý input theo cạnh ngắt.
-- Điều kiện warm-up và số lượng mẫu hợp lệ liên tiếp cho MQ-2.
-- Xử lý timeout, dữ liệu cũ, ADC ngoài miền, queue đầy và lỗi phần cứng.
-- Lưu NVS bất đồng bộ với save ID và kết quả giao dịch.
-- WebSocket snapshot có version; revision và boot ID giúp từ chối lệnh web cũ.
-- Cấu hình board bằng Kconfig và kiểm tra GPIO hợp lệ/trùng nhau khi build.
-- CMake component giúp tách driver, task, control logic, storage, network, web và Telegram.
-- Structured logging để quan sát hệ thống và host test xác định cho control, debounce và format Telegram.
+- Event-driven state machine for Auto/Manual, sensor, editing, saving, and alert states.
+- Hysteresis to reduce relay chattering near the gas threshold.
+- Button debounce and edge-triggered input handling.
+- Warm-up and consecutive-valid-sample criteria for MQ-2 readiness.
+- Handling of timeouts, stale data, out-of-range ADC values, full queues, and hardware errors.
+- Asynchronous NVS saving with a save ID and transaction result.
+- Versioned WebSocket snapshots; revisions and boot IDs reject stale web commands.
+- Board configuration through Kconfig and compile-time GPIO validity/collision checks.
+- CMake components separate drivers, tasks, control logic, storage, networking, web, and Telegram code.
+- Structured logging for observability and deterministic host tests for control, debounce, and Telegram formatting.
 
+## 4. Project images
 
-## 4. Hình ảnh project
+The images are stored in the repository's `images` folder:
 
-Các ảnh được đặt trong thư mục `images` của repository:
+### Web interface
 
-### Giao diện web
+![Web interface](images/Web.png)
 
-![Giao diện web](images/Web.png)
+### Telegram notification
 
-### Thông báo Telegram
+![Telegram notification](images/telegram.jpg)
 
-![Thông báo Telegram](images/telegram.jpg)
+### Physical prototype
 
-### Sản phẩm thực tế
-
-![Sản phẩm thực tế](images/Product.jpg)
-
+![Physical prototype](images/Product.jpg)
